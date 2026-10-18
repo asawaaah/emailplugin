@@ -3,7 +3,7 @@
 // - Jetons d'accès : chrome.storage.session (en mémoire seulement, effacés à la
 //   fermeture de Chrome ; ils sont renouvelés en silence au besoin).
 
-import type { Account, AccountState, SeenState, Settings, TokenEntry } from './types';
+import type { Account, AccountState, SeenState, Settings, Toast, TokenEntry } from './types';
 
 export const DEFAULT_SETTINGS: Settings = {
   clientId: '',
@@ -14,7 +14,12 @@ export const DEFAULT_SETTINGS: Settings = {
   alwaysShowImages: false,
   unreadOnly: true,
   notifications: true,
+  notificationStyle: 'window',
+  notificationSeconds: 8,
+  notificationPosition: 'bottom-right',
 };
+
+export const NOTIFICATION_SECONDS_CHOICES = [5, 8, 15, 30, 0] as const;
 
 export const POLL_CHOICES = [1, 2, 5, 10, 15] as const;
 export const MAX_THREADS_CHOICES = [10, 20, 30, 50] as const;
@@ -89,4 +94,20 @@ export function moveAccount<T>(list: T[], index: number, direction: -1 | 1): T[]
   const next = [...list];
   [next[index], next[target]] = [next[target] as T, next[index] as T];
   return next;
+}
+
+/** File des courriels à montrer dans la fenêtre de notification (mémoire seulement). */
+export async function getToasts(): Promise<Toast[]> {
+  const { toasts } = await chrome.storage.session.get('toasts');
+  return (toasts as Toast[] | undefined) ?? [];
+}
+
+export async function saveToasts(toasts: Toast[]): Promise<void> {
+  await chrome.storage.session.set({ toasts });
+}
+
+/** Ajoute des courriels en tête de file, sans doublon, 20 au plus. */
+export function mergeToasts(queue: Toast[], incoming: Toast[]): Toast[] {
+  const known = new Set(queue.map((t) => t.key));
+  return [...incoming.filter((t) => !known.has(t.key)), ...queue].slice(0, 20);
 }

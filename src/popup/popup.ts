@@ -1,7 +1,7 @@
 // Fenêtre ouverte par un clic sur l'icône : liste des conversations de chaque
 // compte, lecture d'une conversation et actions rapides.
 
-import { avatar, h, icon, iconButton } from '../lib/dom';
+import { accountHue, avatar, h, icon, iconButton } from '../lib/dom';
 import { GmailClient, gmailWebUrl } from '../lib/gmail';
 import { formatLongDate, formatShortDate, setLanguage, t, unreadLabel } from '../lib/i18n';
 import { RemoteError, send } from '../lib/messages';
@@ -17,6 +17,8 @@ interface Section {
   threads: ThreadSummary[];
   unread: number | null;
   collapsed: boolean;
+  /** Rang dans le classement des comptes (donne sa couleur). */
+  rank: number;
   el: HTMLElement;
 }
 
@@ -142,7 +144,7 @@ function renderSection(section: Section): void {
       title: t(section.collapsed ? 'expand' : 'collapse', section.email),
     },
     h('span', { class: 'chevron' }, icon('expandMore')),
-    avatar(section.email, section.email),
+    avatar(section.email, section.email, accountHue(section.rank)),
     h(
       'span',
       { class: 'section-title' },
@@ -503,7 +505,7 @@ async function init(): Promise<void> {
     return;
   }
 
-  for (const { email } of accounts) {
+  for (const [rank, { email }] of accounts.entries()) {
     const el = h('section', { class: 'account-section', 'aria-label': email });
     const section: Section = {
       email,
@@ -511,6 +513,7 @@ async function init(): Promise<void> {
       threads: [],
       unread: states[email]?.unread ?? null,
       collapsed: collapsed.has(email),
+      rank,
       el,
     };
     sections.set(email, section);

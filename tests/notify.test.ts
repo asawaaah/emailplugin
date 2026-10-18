@@ -60,3 +60,20 @@ describe('moveAccount', () => {
     expect(moveAccount(['a', 'b'], 1, 1)).toEqual(['a', 'b']);
   });
 });
+
+describe('fenêtre de notification', () => {
+  it('se place dans le coin choisi de la zone utile', async () => {
+    const { cornerBounds } = await import('../src/lib/toast-window');
+    const area = { left: 0, top: 0, width: 1920, height: 1040 };
+    expect(cornerBounds(area, 'bottom-right', 200)).toEqual({ left: 1508, top: 828, width: 400, height: 200 });
+    expect(cornerBounds(area, 'top-right', 200)).toEqual({ left: 1508, top: 12, width: 400, height: 200 });
+    // Second écran à gauche de l'écran principal
+    expect(cornerBounds({ left: -1280, top: 0, width: 1280, height: 984 }, 'bottom-right', 300).left).toBe(-412);
+  });
+  it('ajoute les nouveaux courriels en tête, sans doublon, 20 au plus', async () => {
+    const { mergeToasts } = await import('../src/lib/storage');
+    const toast = (key: string) => ({ key, email: 'a@gmail.com', threadId: 't', from: { name: 'X', email: 'x@y.z' }, subject: '', snippet: '', date: 0 });
+    expect(mergeToasts([toast('a')], [toast('b'), toast('a')]).map((x) => x.key)).toEqual(['b', 'a']);
+    expect(mergeToasts(Array.from({ length: 20 }, (_, i) => toast(`o${i}`)), [toast('n')])).toHaveLength(20);
+  });
+});

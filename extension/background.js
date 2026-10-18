@@ -215,7 +215,10 @@ var DEFAULT_SETTINGS = {
   markReadOnOpen: true,
   alwaysShowImages: false,
   unreadOnly: true,
-  notifications: true
+  notifications: true,
+  notificationStyle: "window",
+  notificationSeconds: 8,
+  notificationPosition: "bottom-right"
 };
 async function getSettings() {
   const { settings } = await chrome.storage.local.get("settings");
@@ -251,6 +254,17 @@ async function getSeen() {
 }
 async function saveSeen(seen) {
   await chrome.storage.local.set({ seen });
+}
+async function getToasts() {
+  const { toasts } = await chrome.storage.session.get("toasts");
+  return toasts ?? [];
+}
+async function saveToasts(toasts) {
+  await chrome.storage.session.set({ toasts });
+}
+function mergeToasts(queue, incoming) {
+  const known = new Set(queue.map((t2) => t2.key));
+  return [...incoming.filter((t2) => !known.has(t2.key)), ...queue].slice(0, 20);
 }
 
 // src/lib/auth.ts
@@ -421,6 +435,14 @@ var fr = {
   notifManyMessage: "Dernier : {0}",
   notifTestTitle: "Notification de test",
   notifTestMessage: "Les notifications d\u2019Aper\xE7u Gmail fonctionnent.",
+  toastTitle: "Nouveaux courriels \u2014 Aper\xE7u Gmail",
+  toastOpen: "Ouvrir",
+  toastMoreOne: "+1 autre courriel",
+  toastMore: "+{0} autres courriels",
+  dismiss: "Fermer",
+  dismissAll: "Tout fermer",
+  justNow: "\xE0 l\u2019instant",
+  minutesAgo: "il y a {0} min",
   // Page d'options
   optionsTitle: "R\xE9glages \u2014 Aper\xE7u Gmail",
   googleSection: "Connexion Google",
@@ -455,7 +477,17 @@ var fr = {
   unreadOnlyLabel: "N\u2019afficher que les courriels non lus (par d\xE9faut)",
   notificationsLabel: "Notification \xE0 chaque nouveau courriel (compte, objet et aper\xE7u)",
   notifTest: "Tester la notification",
-  notifHelp: "Rien ne s\u2019affiche ? Autorisez les notifications de Google Chrome dans les r\xE9glages de votre syst\xE8me (Windows : Param\xE8tres \u203A Notifications ; Mac : R\xE9glages Syst\xE8me \u203A Notifications).",
+  notifHelp: "Notification du syst\xE8me absente ? Autorisez les notifications de Google Chrome dans les r\xE9glages de votre syst\xE8me (Windows : Param\xE8tres \u203A Notifications ; Mac : R\xE9glages Syst\xE8me \u203A Notifications).",
+  notifStyleLabel: "Type de notification",
+  notifStyleWindow: "Fen\xEAtre Aper\xE7u Gmail (recommand\xE9)",
+  notifStyleSystem: "Notification du syst\xE8me",
+  notifStyleBoth: "Les deux",
+  notifDurationLabel: "Dur\xE9e d\u2019affichage de la fen\xEAtre",
+  secondsShort: "{0} s",
+  untilClosed: "Jusqu\u2019\xE0 fermeture",
+  notifPositionLabel: "Position de la fen\xEAtre",
+  positionBottomRight: "En bas \xE0 droite",
+  positionTopRight: "En haut \xE0 droite",
   privacyNote: "Vos courriels ne quittent jamais votre navigateur : l\u2019extension parle directement \xE0 Google, sans serveur interm\xE9diaire."
 };
 var en = {
@@ -506,6 +538,14 @@ var en = {
   notifManyMessage: "Latest: {0}",
   notifTestTitle: "Test notification",
   notifTestMessage: "Gmail Preview notifications are working.",
+  toastTitle: "New messages \u2014 Gmail Preview",
+  toastOpen: "Open",
+  toastMoreOne: "+1 more message",
+  toastMore: "+{0} more messages",
+  dismiss: "Close",
+  dismissAll: "Close all",
+  justNow: "just now",
+  minutesAgo: "{0} min ago",
   optionsTitle: "Settings \u2014 Gmail Preview",
   googleSection: "Google sign-in",
   googleHelp: "Paste the OAuth client ID of your Google Cloud project (type \u201CWeb application\u201D). The step-by-step guide is in the project README.",
@@ -539,7 +579,17 @@ var en = {
   unreadOnlyLabel: "Show unread messages only (default)",
   notificationsLabel: "Notify me of each new message (account, subject and preview)",
   notifTest: "Test notification",
-  notifHelp: "Nothing shows up? Allow Google Chrome notifications in your system settings (Windows: Settings \u203A Notifications; Mac: System Settings \u203A Notifications).",
+  notifHelp: "No system notification? Allow Google Chrome notifications in your system settings (Windows: Settings \u203A Notifications; Mac: System Settings \u203A Notifications).",
+  notifStyleLabel: "Notification type",
+  notifStyleWindow: "Gmail Preview window (recommended)",
+  notifStyleSystem: "System notification",
+  notifStyleBoth: "Both",
+  notifDurationLabel: "Window display time",
+  secondsShort: "{0} s",
+  untilClosed: "Until closed",
+  notifPositionLabel: "Window position",
+  positionBottomRight: "Bottom right",
+  positionTopRight: "Top right",
   privacyNote: "Your messages never leave your browser: the extension talks directly to Google, with no server in between."
 };
 var dictionaries = { fr, en };
@@ -576,6 +626,33 @@ function parseNotificationId(id) {
   const [kind, email, rest] = id.split("|");
   if (!email || kind !== "msg" && kind !== "sum") return null;
   return { email, threadId: kind === "msg" ? rest ?? null : null };
+}
+
+// src/lib/toast-window.ts
+var TOAST_WIDTH = 400;
+var MARGIN = 12;
+function cornerBounds(area, position, height, width = TOAST_WIDTH) {
+  const left = Math.round(area.left + area.width - width - MARGIN);
+  const top = position === "top-right" ? Math.round(area.top + MARGIN) : Math.round(area.top + area.height - height - MARGIN);
+  return { left, top, width, height };
+}
+async function workArea() {
+  const fallback = { left: 0, top: 0, width: 1280, height: 800 };
+  try {
+    const displays = await chrome.system.display.getInfo();
+    let display = displays.find((d) => d.isPrimary) ?? displays[0];
+    const browser = await chrome.windows.getLastFocused({ windowTypes: ["normal"] }).catch(() => null);
+    if (browser?.left !== void 0 && browser.top !== void 0 && browser.width && browser.height) {
+      const cx = browser.left + browser.width / 2;
+      const cy = browser.top + browser.height / 2;
+      display = displays.find(
+        (d) => cx >= d.bounds.left && cx < d.bounds.left + d.bounds.width && cy >= d.bounds.top && cy < d.bounds.top + d.bounds.height
+      ) ?? display;
+    }
+    return display?.workArea ?? fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 // src/background.ts
@@ -630,6 +707,73 @@ function notifySummary(email, messages) {
     priority: 1
   });
 }
+var TOAST_START_HEIGHT = 190;
+function toToast(email, message) {
+  return {
+    key: `${email}|${message.id}`,
+    email,
+    threadId: message.threadId,
+    from: message.from,
+    subject: message.subject,
+    snippet: message.snippet,
+    date: message.date
+  };
+}
+async function getToastWindowIdRaw() {
+  const { toastWindowId } = await chrome.storage.session.get("toastWindowId");
+  return typeof toastWindowId === "number" ? toastWindowId : null;
+}
+async function getToastWindowId() {
+  const id = await getToastWindowIdRaw();
+  if (id === null) return null;
+  return chrome.windows.get(id).then(() => id, () => null);
+}
+var toastChain = Promise.resolve();
+function serialized(task) {
+  const run = toastChain.then(task);
+  toastChain = run.catch(() => void 0);
+  return run;
+}
+function showToasts(items, settings) {
+  if (!items.length) return Promise.resolve();
+  return serialized(async () => {
+    await saveToasts(mergeToasts(await getToasts(), items));
+    if (await getToastWindowId()) return;
+    const bounds = cornerBounds(await workArea(), settings.notificationPosition, TOAST_START_HEIGHT);
+    const created = await chrome.windows.create({ url: "notify.html", type: "popup", focused: false, ...bounds });
+    await chrome.storage.session.set({ toastWindowId: created?.id ?? null });
+  });
+}
+function dismissToasts(keys) {
+  const remove = new Set(keys);
+  return serialized(async () => saveToasts((await getToasts()).filter((toast) => !remove.has(toast.key))));
+}
+chrome.windows.onRemoved.addListener((windowId) => {
+  void serialized(async () => {
+    if (await getToastWindowIdRaw() !== windowId) return;
+    await chrome.storage.session.set({ toastWindowId: null });
+    await saveToasts([]);
+  });
+});
+async function openInGmail(email, threadId) {
+  const url = gmailWebUrl(email, threadId ?? void 0);
+  const browser = await chrome.windows.getLastFocused({ windowTypes: ["normal"] }).catch(() => null);
+  if (browser?.id === void 0) {
+    await chrome.windows.create({ url, focused: true });
+    return;
+  }
+  await chrome.tabs.create({ url, windowId: browser.id, active: true });
+  await chrome.windows.update(browser.id, { focused: true });
+}
+async function announce(email, messages, settings) {
+  if (settings.notificationStyle !== "system") {
+    await showToasts(messages.map((m) => toToast(email, m)), settings);
+  }
+  if (settings.notificationStyle !== "window") {
+    if (messages.length > MAX_INDIVIDUAL) notifySummary(email, messages);
+    else messages.forEach((m) => notifyMessage(email, m));
+  }
+}
 async function checkNewMessages(email, client, settings, previous) {
   const now = Date.now();
   const ids = await client.listUnreadMessageIds(20);
@@ -637,8 +781,7 @@ async function checkNewMessages(email, client, settings, previous) {
   if (!settings.notifications || !candidates.length || !previous) return next;
   const metas = await Promise.all(candidates.slice(0, 10).map((id) => client.getMessageMeta(id)));
   const fresh = keepRecent(metas, previous.checkedAt).sort((a, b) => b.date - a.date);
-  if (fresh.length > MAX_INDIVIDUAL) notifySummary(email, fresh);
-  else fresh.forEach((m) => notifyMessage(email, m));
+  await announce(email, fresh, settings);
   return next;
 }
 var polling = null;
@@ -710,13 +853,46 @@ async function handle(request) {
     case "testNotification": {
       const settings = await getSettings();
       setLanguage(settings.language);
-      chrome.notifications.create(`test|${Date.now()}`, {
-        type: "basic",
-        iconUrl: ICON,
-        title: t("notifTestTitle"),
-        message: t("notifTestMessage"),
-        contextMessage: t("appName")
-      });
+      const email = (await getAccounts())[0]?.email ?? "exemple@gmail.com";
+      if (settings.notificationStyle !== "system") {
+        await showToasts([{
+          key: `test|${Date.now()}`,
+          email,
+          threadId: null,
+          from: { name: t("appName"), email: "" },
+          subject: t("notifTestTitle"),
+          snippet: t("notifTestMessage"),
+          date: Date.now()
+        }], settings);
+      }
+      if (settings.notificationStyle !== "window") {
+        chrome.notifications.create(`test|${Date.now()}`, {
+          type: "basic",
+          iconUrl: ICON,
+          title: t("notifTestTitle"),
+          message: t("notifTestMessage"),
+          contextMessage: email
+        });
+      }
+      return null;
+    }
+    case "threadAction": {
+      const client = new GmailClient((forceRefresh) => getToken(request.email, { forceRefresh }));
+      if (request.action === "markRead") await client.markRead(request.threadId);
+      else await client.archive(request.threadId);
+      void pollAll();
+      return null;
+    }
+    case "dismissToasts":
+      await dismissToasts(request.keys);
+      return null;
+    case "openThread":
+      await openInGmail(request.email, request.threadId);
+      return null;
+    case "placeToastWindow": {
+      const settings = await getSettings();
+      const bounds = cornerBounds(await workArea(), settings.notificationPosition, request.height);
+      await chrome.windows.update(request.windowId, bounds);
       return null;
     }
   }
@@ -749,7 +925,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 chrome.notifications.onClicked.addListener((id) => {
   const target = parseNotificationId(id);
   chrome.notifications.clear(id);
-  if (target) void chrome.tabs.create({ url: gmailWebUrl(target.email, target.threadId ?? void 0) });
+  if (target) void openInGmail(target.email, target.threadId);
 });
 chrome.notifications.onButtonClicked.addListener((id, buttonIndex) => {
   const target = parseNotificationId(id);

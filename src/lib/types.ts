@@ -16,8 +16,29 @@ export interface Settings {
   alwaysShowImages: boolean;
   /** N'afficher que les conversations non lues dans le popup. */
   unreadOnly: boolean;
-  /** Notification de bureau à chaque nouveau courriel. */
+  /** Notification à chaque nouveau courriel. */
   notifications: boolean;
+  /** Fenêtre dessinée par l'extension, notification du système, ou les deux. */
+  notificationStyle: NotificationStyle;
+  /** Durée d'affichage de la fenêtre, en secondes (0 : jusqu'à fermeture). */
+  notificationSeconds: number;
+  notificationPosition: NotificationPosition;
+}
+
+export type NotificationStyle = 'window' | 'system' | 'both';
+export type NotificationPosition = 'bottom-right' | 'top-right';
+
+/** Courriel affiché dans la fenêtre de notification. */
+export interface Toast {
+  /** Clé unique : compte et message. */
+  key: string;
+  email: string;
+  /** Conversation à ouvrir ; null pour la notification de test. */
+  threadId: string | null;
+  from: Person;
+  subject: string;
+  snippet: string;
+  date: number;
 }
 
 export interface Account {

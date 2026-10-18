@@ -93,7 +93,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: hsl(var(--hue, 210) 55% 45%);
+  background: hsl(var(--hue, 210) 60% 42%);
   color: #fff;
   font-weight: 600;
   font-size: 14px;

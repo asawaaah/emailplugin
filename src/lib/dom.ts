@@ -83,9 +83,17 @@ export function avatarHue(seed: string): number {
   return hash % 360;
 }
 
-export function avatar(name: string, seed: string): HTMLElement {
+/** Couleurs des comptes, dans l'ordre du classement : bleu, vert, orange, violet, sarcelle, rose. */
+const ACCOUNT_HUES = [217, 142, 28, 280, 180, 335] as const;
+
+export function accountHue(rank: number): number {
+  return ACCOUNT_HUES[((rank % ACCOUNT_HUES.length) + ACCOUNT_HUES.length) % ACCOUNT_HUES.length] ?? 217;
+}
+
+/** Pastille avec l'initiale ; `hue` impose la couleur (comptes), sinon elle découle de `seed`. */
+export function avatar(name: string, seed: string, hue?: number): HTMLElement {
   const letter = (name.trim()[0] ?? '?').toUpperCase();
   const el = h('span', { class: 'avatar', 'aria-hidden': 'true' }, letter);
-  el.style.setProperty('--hue', String(avatarHue(seed)));
+  el.style.setProperty('--hue', String(hue ?? avatarHue(seed)));
   return el;
 }

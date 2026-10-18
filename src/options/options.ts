@@ -1,10 +1,10 @@
 // Page de réglages : identifiant client Google, comptes, préférences.
 
-import { h, iconButton, avatar } from '../lib/dom';
+import { accountHue, avatar, h, iconButton } from '../lib/dom';
 import { setLanguage, t, type MessageKey } from '../lib/i18n';
 import { RemoteError, send } from '../lib/messages';
-import { MAX_THREADS_CHOICES, POLL_CHOICES, getAccounts, getSettings, moveAccount, saveAccounts, saveSettings } from '../lib/storage';
-import type { Language, Settings } from '../lib/types';
+import { MAX_THREADS_CHOICES, NOTIFICATION_SECONDS_CHOICES, POLL_CHOICES, getAccounts, getSettings, moveAccount, saveAccounts, saveSettings } from '../lib/storage';
+import type { Language, NotificationPosition, NotificationStyle, Settings } from '../lib/types';
 
 const app = document.getElementById('app') as HTMLElement;
 
@@ -88,7 +88,7 @@ async function accountsCard(settings: Settings): Promise<HTMLElement> {
             'li',
             {},
             h('span', { class: 'account-rank' }, String(index + 1)),
-            avatar(email, email),
+            avatar(email, email, accountHue(index)),
             h('span', { class: 'account-email' }, email),
             reorderButton('arrowUp', t('moveUp', email), index, -1, accounts.length),
             reorderButton('arrowDown', t('moveDown', email), index, 1, accounts.length),
@@ -160,6 +160,19 @@ function prefsCard(settings: Settings): HTMLElement {
     checkbox('mark-read', t('markReadLabel'), settings.markReadOnOpen, (markReadOnOpen) => void saveSettings({ markReadOnOpen })),
     checkbox('show-images', t('showImagesLabel'), settings.alwaysShowImages, (alwaysShowImages) => void saveSettings({ alwaysShowImages })),
     checkbox('notifications', t('notificationsLabel'), settings.notifications, (notifications) => void saveSettings({ notifications })),
+    select<NotificationStyle>('notif-style', t('notifStyleLabel'), settings.notificationStyle, [
+      { value: 'window', label: t('notifStyleWindow') },
+      { value: 'system', label: t('notifStyleSystem') },
+      { value: 'both', label: t('notifStyleBoth') },
+    ], (notificationStyle) => void saveSettings({ notificationStyle })),
+    select<number>('notif-seconds', t('notifDurationLabel'), settings.notificationSeconds, NOTIFICATION_SECONDS_CHOICES.map((n) => ({
+      value: n,
+      label: n === 0 ? t('untilClosed') : t('secondsShort', n),
+    })), (notificationSeconds) => void saveSettings({ notificationSeconds })),
+    select<NotificationPosition>('notif-position', t('notifPositionLabel'), settings.notificationPosition, [
+      { value: 'bottom-right', label: t('positionBottomRight') },
+      { value: 'top-right', label: t('positionTopRight') },
+    ], (notificationPosition) => void saveSettings({ notificationPosition })),
     notificationTest(),
   );
 }

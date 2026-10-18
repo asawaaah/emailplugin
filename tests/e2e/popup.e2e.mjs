@@ -221,24 +221,78 @@ await page.goto(popupUrl);
 await page.waitForSelector('.account-section');
 assert.equal(await sections.nth(0).getAttribute('aria-label'), 'bob.travail@gmail.com', 'bob passe en premier');
 
-// 9. Notifications : rien au premier passage, puis une par nouveau courriel
+// 9. Notifications : rien au premier passage, puis la fenêtre Aperçu Gmail
 const refresh = () => page.evaluate(() => chrome.runtime.sendMessage({ type: 'refresh' }));
+const setSettings = (patch) => worker.evaluate(async (p) => {
+  const { settings } = await chrome.storage.local.get('settings');
+  await chrome.storage.local.set({ settings: { ...settings, ...p } });
+}, patch);
+const nextToastWindow = () => context.waitForEvent('page', { predicate: (p) => p.url().endsWith('/notify.html'), timeout: 10_000 });
+const isNotifyPageOpen = () => context.pages().some((p) => p.url().endsWith('/notify.html') && !p.isClosed());
+
 await refresh();
-assert.deepEqual(await worker.evaluate(() => globalThis.__notifications), [], 'aucune notification pour les courriels déjà là');
+assert.equal(isNotifyPageOpen(), false, 'aucune fenêtre pour les courriels déjà là');
 mailbox['alice@gmail.com'].unshift({
   id: 't9',
   messages: [msg('m9', 't9', 'Hydro-Québec <factures@hydro.qc.ca>', 'Votre facture est prête', 'Montant à payer : 84,12 $. Échéance le 3 novembre.', 0, true)],
 });
+let toastPromise = nextToastWindow();
+await refresh();
+let toastPage = await toastPromise;
+toastPage.on('pageerror', (e) => errors.push(`notify: ${e.message}`));
+await toastPage.setViewportSize({ width: 400, height: 520 }); // taille réelle de la fenêtre
+await toastPage.waitForSelector('.toast-card');
+const cardText = await toastPage.locator('.toast-card').innerText();
+for (const expected of ['alice@gmail.com', 'Hydro-Québec', 'Votre facture est prête', 'Montant à payer : 84,12 $']) {
+  assert.ok(cardText.includes(expected), `la carte affiche « ${expected} »`);
+}
+assert.deepEqual(await worker.evaluate(() => globalThis.__notifications), [], 'pas de notification du système par défaut');
+await toastPage.screenshot({ path: `${OUT}/8-notification${suffix}.png` });
+
+// Deux autres courriels, sur les deux comptes : les cartes s'empilent
+mailbox['bob.travail@gmail.com'].unshift({
+  id: 'b9',
+  messages: [msg('n9', 'b9', 'Julie Gagnon <julie@client.ca>', 'Contrat signé', 'Bonne nouvelle : le client a signé ce matin, je t’envoie le PDF.', 0, true)],
+});
+mailbox['alice@gmail.com'].unshift({
+  id: 't8',
+  messages: [msg('m8', 't8', 'Marie Tremblay <marie@exemple.ca>', 'Photos du souper', 'Voici les photos de vendredi, on remet ça bientôt !', 0, true)],
+});
+await refresh();
+await toastPage.waitForFunction(() => document.querySelectorAll('.toast-card').length === 3);
+await toastPage.waitForTimeout(300);
+await toastPage.screenshot({ path: `${OUT}/9-notifications-empilees${suffix}.png` });
+await refresh();
+assert.equal(await toastPage.locator('.toast-card').count(), 3, 'pas de doublon');
+
+// Actions : « Marquer comme lu » appelle Gmail et retire la carte ; « Tout fermer » ferme la fenêtre
+await toastPage.locator('.toast-card', { hasText: 'Hydro-Québec' }).getByRole('button', { name: 'Marquer comme lu' }).click();
+await toastPage.waitForFunction(() => document.querySelectorAll('.toast-card').length === 2);
+assert.ok(calls.includes('POST alice@gmail.com /threads/t9/modify'));
+await Promise.all([toastPage.waitForEvent('close'), toastPage.getByRole('button', { name: 'Tout fermer' }).click()]);
+
+// Fermeture automatique après la durée choisie
+await setSettings({ notificationSeconds: 5 });
+toastPromise = nextToastWindow();
+await page.evaluate(() => chrome.runtime.sendMessage({ type: 'testNotification' }));
+toastPage = await toastPromise;
+await toastPage.waitForSelector('.toast-card');
+assert.match(await toastPage.locator('.toast-card').innerText(), /Notification de test/);
+await toastPage.waitForEvent('close', { timeout: 9000 });
+
+// Style « Notification du système » : plus de fenêtre, notification classique
+await setSettings({ notificationStyle: 'system' });
+mailbox['alice@gmail.com'].unshift({
+  id: 't7',
+  messages: [msg('m7', 't7', 'Banque <alertes@banque.ca>', 'Dépôt reçu', 'Un dépôt de 1 250,00 $ a été effectué dans votre compte.', 0, true)],
+});
 await refresh();
 const notifications = await worker.evaluate(() => globalThis.__notifications);
 assert.equal(notifications.length, 1);
-assert.equal(notifications[0].title, 'Votre facture est prête');
-assert.equal(notifications[0].message, 'Montant à payer : 84,12 $. Échéance le 3 novembre.');
-assert.equal(notifications[0].contextMessage, 'alice@gmail.com · De : Hydro-Québec');
-assert.equal(notifications[0].id, 'msg|alice@gmail.com|t9');
-await refresh();
-assert.equal((await worker.evaluate(() => globalThis.__notifications)).length, 1, 'pas de doublon');
-console.log('Notification :', JSON.stringify({ title: notifications[0].title, message: notifications[0].message, context: notifications[0].contextMessage }));
+assert.equal(notifications[0].title, 'Dépôt reçu');
+assert.equal(notifications[0].contextMessage, 'alice@gmail.com · De : Banque');
+assert.equal(notifications[0].id, 'msg|alice@gmail.com|t7');
+assert.equal(isNotifyPageOpen(), false);
 
 // 10. Anglais
 await options.selectOption('#language', 'en');

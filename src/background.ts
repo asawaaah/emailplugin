@@ -6,8 +6,19 @@ import { AuthRequiredError, GmailClient, gmailWebUrl } from './lib/gmail';
 import { setLanguage, t } from './lib/i18n';
 import type { ErrorCode, Request, Response } from './lib/messages';
 import { MAX_INDIVIDUAL, detectNew, keepRecent, notificationId, parseNotificationId } from './lib/notify';
-import { getAccountStates, getAccounts, getSeen, getSettings, saveAccountStates, saveSeen } from './lib/storage';
-import type { AccountState, MessageMeta, SeenState, Settings } from './lib/types';
+import {
+  getAccountStates,
+  getAccounts,
+  getSeen,
+  getSettings,
+  getToasts,
+  mergeToasts,
+  saveAccountStates,
+  saveSeen,
+  saveToasts,
+} from './lib/storage';
+import { cornerBounds, workArea } from './lib/toast-window';
+import type { AccountState, MessageMeta, SeenState, Settings, Toast } from './lib/types';
 
 const ALARM = 'poll';
 const BADGE_RED = '#d93025';
@@ -69,6 +80,92 @@ function notifySummary(email: string, messages: MessageMeta[]): void {
   });
 }
 
+// ---------- Fenêtre de notification dessinée par l'extension ----------
+
+/** Hauteur de départ ; la fenêtre s'ajuste ensuite à son contenu. */
+const TOAST_START_HEIGHT = 190;
+
+function toToast(email: string, message: MessageMeta): Toast {
+  return {
+    key: `${email}|${message.id}`,
+    email,
+    threadId: message.threadId,
+    from: message.from,
+    subject: message.subject,
+    snippet: message.snippet,
+    date: message.date,
+  };
+}
+
+async function getToastWindowIdRaw(): Promise<number | null> {
+  const { toastWindowId } = await chrome.storage.session.get('toastWindowId');
+  return typeof toastWindowId === 'number' ? toastWindowId : null;
+}
+
+/** Fenêtre de notification encore ouverte, ou null. */
+async function getToastWindowId(): Promise<number | null> {
+  const id = await getToastWindowIdRaw();
+  if (id === null) return null;
+  return chrome.windows.get(id).then(() => id, () => null);
+}
+
+// Toutes les modifications de la file passent ici, l'une après l'autre : deux
+// comptes qui reçoivent un courriel en même temps ne s'écrasent pas.
+let toastChain: Promise<unknown> = Promise.resolve();
+function serialized<T>(task: () => Promise<T>): Promise<T> {
+  const run = toastChain.then(task);
+  toastChain = run.catch(() => undefined);
+  return run;
+}
+
+/** Ajoute des courriels à la fenêtre de notification, et l'ouvre au besoin. */
+function showToasts(items: Toast[], settings: Settings): Promise<void> {
+  if (!items.length) return Promise.resolve();
+  return serialized(async () => {
+    await saveToasts(mergeToasts(await getToasts(), items));
+    if (await getToastWindowId()) return; // la fenêtre ouverte se met à jour seule
+    const bounds = cornerBounds(await workArea(), settings.notificationPosition, TOAST_START_HEIGHT);
+    const created = await chrome.windows.create({ url: 'notify.html', type: 'popup', focused: false, ...bounds });
+    await chrome.storage.session.set({ toastWindowId: created?.id ?? null });
+  });
+}
+
+function dismissToasts(keys: string[]): Promise<void> {
+  const remove = new Set(keys);
+  return serialized(async () => saveToasts((await getToasts()).filter((toast) => !remove.has(toast.key))));
+}
+
+chrome.windows.onRemoved.addListener((windowId) => {
+  void serialized(async () => {
+    if ((await getToastWindowIdRaw()) !== windowId) return;
+    await chrome.storage.session.set({ toastWindowId: null });
+    await saveToasts([]); // fenêtre fermée : on oublie les courriels qu'elle montrait
+  });
+});
+
+/** Ouvre une conversation dans Gmail, dans la fenêtre du navigateur. */
+async function openInGmail(email: string, threadId: string | null): Promise<void> {
+  const url = gmailWebUrl(email, threadId ?? undefined);
+  const browser = await chrome.windows.getLastFocused({ windowTypes: ['normal'] }).catch(() => null);
+  if (browser?.id === undefined) {
+    await chrome.windows.create({ url, focused: true });
+    return;
+  }
+  await chrome.tabs.create({ url, windowId: browser.id, active: true });
+  await chrome.windows.update(browser.id, { focused: true });
+}
+
+/** Affiche les nouveaux courriels selon le style choisi dans les réglages. */
+async function announce(email: string, messages: MessageMeta[], settings: Settings): Promise<void> {
+  if (settings.notificationStyle !== 'system') {
+    await showToasts(messages.map((m) => toToast(email, m)), settings);
+  }
+  if (settings.notificationStyle !== 'window') {
+    if (messages.length > MAX_INDIVIDUAL) notifySummary(email, messages);
+    else messages.forEach((m) => notifyMessage(email, m));
+  }
+}
+
 /** Repère les nouveaux non lus d'un compte et affiche les notifications. */
 async function checkNewMessages(
   email: string,
@@ -83,8 +180,7 @@ async function checkNewMessages(
 
   const metas = await Promise.all(candidates.slice(0, 10).map((id) => client.getMessageMeta(id)));
   const fresh = keepRecent(metas, previous.checkedAt).sort((a, b) => b.date - a.date);
-  if (fresh.length > MAX_INDIVIDUAL) notifySummary(email, fresh);
-  else fresh.forEach((m) => notifyMessage(email, m));
+  await announce(email, fresh, settings);
   return next;
 }
 
@@ -163,13 +259,47 @@ async function handle(request: Request): Promise<unknown> {
     case 'testNotification': {
       const settings = await getSettings();
       setLanguage(settings.language);
-      chrome.notifications.create(`test|${Date.now()}`, {
-        type: 'basic',
-        iconUrl: ICON,
-        title: t('notifTestTitle'),
-        message: t('notifTestMessage'),
-        contextMessage: t('appName'),
-      });
+      const email = (await getAccounts())[0]?.email ?? 'exemple@gmail.com';
+      if (settings.notificationStyle !== 'system') {
+        await showToasts([{
+          key: `test|${Date.now()}`,
+          email,
+          threadId: null,
+          from: { name: t('appName'), email: '' },
+          subject: t('notifTestTitle'),
+          snippet: t('notifTestMessage'),
+          date: Date.now(),
+        }], settings);
+      }
+      if (settings.notificationStyle !== 'window') {
+        chrome.notifications.create(`test|${Date.now()}`, {
+          type: 'basic',
+          iconUrl: ICON,
+          title: t('notifTestTitle'),
+          message: t('notifTestMessage'),
+          contextMessage: email,
+        });
+      }
+      return null;
+    }
+    case 'threadAction': {
+      const client = new GmailClient((forceRefresh) => getToken(request.email, { forceRefresh }));
+      if (request.action === 'markRead') await client.markRead(request.threadId);
+      else await client.archive(request.threadId);
+      void pollAll();
+      return null;
+    }
+    case 'dismissToasts':
+      await dismissToasts(request.keys);
+      return null;
+    case 'openThread':
+      await openInGmail(request.email, request.threadId);
+      return null;
+    case 'placeToastWindow': {
+      // Demandé par la fenêtre de notification quand sa hauteur change.
+      const settings = await getSettings();
+      const bounds = cornerBounds(await workArea(), settings.notificationPosition, request.height);
+      await chrome.windows.update(request.windowId, bounds);
       return null;
     }
   }
@@ -210,7 +340,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 chrome.notifications.onClicked.addListener((id) => {
   const target = parseNotificationId(id);
   chrome.notifications.clear(id);
-  if (target) void chrome.tabs.create({ url: gmailWebUrl(target.email, target.threadId ?? undefined) });
+  if (target) void openInGmail(target.email, target.threadId);
 });
 
 chrome.notifications.onButtonClicked.addListener((id, buttonIndex) => {

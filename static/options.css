@@ -43,5 +43,5 @@ input[readonly] { background: var(--surface); }
 .account-email { flex: 1; overflow-wrap: anywhere; }
 .account-rank { width: 20px; text-align: center; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .icon-button.invisible { visibility: hidden; }
-.notif-test { margin-left: 28px; }
+.notif-test { margin-top: 16px; }
 .notif-test .help { margin: 8px 0 0; font-size: 13px; }

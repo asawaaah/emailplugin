@@ -7,7 +7,11 @@ export type Request =
   | { type: 'addAccount' }
   | { type: 'removeAccount'; email: string }
   | { type: 'refresh' }
-  | { type: 'testNotification' };
+  | { type: 'testNotification' }
+  | { type: 'threadAction'; email: string; threadId: string; action: 'markRead' | 'archive' }
+  | { type: 'openThread'; email: string; threadId: string | null }
+  | { type: 'dismissToasts'; keys: string[] }
+  | { type: 'placeToastWindow'; windowId: number; height: number };
 
 export type ErrorCode = 'auth_required' | 'no_client_id' | 'canceled' | 'mismatch' | 'failed';
 

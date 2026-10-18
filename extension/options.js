@@ -66,10 +66,14 @@ function avatarHue(seed) {
   for (const char of seed) hash = hash * 31 + char.charCodeAt(0) >>> 0;
   return hash % 360;
 }
-function avatar(name, seed) {
+var ACCOUNT_HUES = [217, 142, 28, 280, 180, 335];
+function accountHue(rank) {
+  return ACCOUNT_HUES[(rank % ACCOUNT_HUES.length + ACCOUNT_HUES.length) % ACCOUNT_HUES.length] ?? 217;
+}
+function avatar(name, seed, hue) {
   const letter = (name.trim()[0] ?? "?").toUpperCase();
   const el = h("span", { class: "avatar", "aria-hidden": "true" }, letter);
-  el.style.setProperty("--hue", String(avatarHue(seed)));
+  el.style.setProperty("--hue", String(hue ?? avatarHue(seed)));
   return el;
 }
 
@@ -122,6 +126,14 @@ var fr = {
   notifManyMessage: "Dernier : {0}",
   notifTestTitle: "Notification de test",
   notifTestMessage: "Les notifications d\u2019Aper\xE7u Gmail fonctionnent.",
+  toastTitle: "Nouveaux courriels \u2014 Aper\xE7u Gmail",
+  toastOpen: "Ouvrir",
+  toastMoreOne: "+1 autre courriel",
+  toastMore: "+{0} autres courriels",
+  dismiss: "Fermer",
+  dismissAll: "Tout fermer",
+  justNow: "\xE0 l\u2019instant",
+  minutesAgo: "il y a {0} min",
   // Page d'options
   optionsTitle: "R\xE9glages \u2014 Aper\xE7u Gmail",
   googleSection: "Connexion Google",
@@ -156,7 +168,17 @@ var fr = {
   unreadOnlyLabel: "N\u2019afficher que les courriels non lus (par d\xE9faut)",
   notificationsLabel: "Notification \xE0 chaque nouveau courriel (compte, objet et aper\xE7u)",
   notifTest: "Tester la notification",
-  notifHelp: "Rien ne s\u2019affiche ? Autorisez les notifications de Google Chrome dans les r\xE9glages de votre syst\xE8me (Windows : Param\xE8tres \u203A Notifications ; Mac : R\xE9glages Syst\xE8me \u203A Notifications).",
+  notifHelp: "Notification du syst\xE8me absente ? Autorisez les notifications de Google Chrome dans les r\xE9glages de votre syst\xE8me (Windows : Param\xE8tres \u203A Notifications ; Mac : R\xE9glages Syst\xE8me \u203A Notifications).",
+  notifStyleLabel: "Type de notification",
+  notifStyleWindow: "Fen\xEAtre Aper\xE7u Gmail (recommand\xE9)",
+  notifStyleSystem: "Notification du syst\xE8me",
+  notifStyleBoth: "Les deux",
+  notifDurationLabel: "Dur\xE9e d\u2019affichage de la fen\xEAtre",
+  secondsShort: "{0} s",
+  untilClosed: "Jusqu\u2019\xE0 fermeture",
+  notifPositionLabel: "Position de la fen\xEAtre",
+  positionBottomRight: "En bas \xE0 droite",
+  positionTopRight: "En haut \xE0 droite",
   privacyNote: "Vos courriels ne quittent jamais votre navigateur : l\u2019extension parle directement \xE0 Google, sans serveur interm\xE9diaire."
 };
 var en = {
@@ -207,6 +229,14 @@ var en = {
   notifManyMessage: "Latest: {0}",
   notifTestTitle: "Test notification",
   notifTestMessage: "Gmail Preview notifications are working.",
+  toastTitle: "New messages \u2014 Gmail Preview",
+  toastOpen: "Open",
+  toastMoreOne: "+1 more message",
+  toastMore: "+{0} more messages",
+  dismiss: "Close",
+  dismissAll: "Close all",
+  justNow: "just now",
+  minutesAgo: "{0} min ago",
   optionsTitle: "Settings \u2014 Gmail Preview",
   googleSection: "Google sign-in",
   googleHelp: "Paste the OAuth client ID of your Google Cloud project (type \u201CWeb application\u201D). The step-by-step guide is in the project README.",
@@ -240,7 +270,17 @@ var en = {
   unreadOnlyLabel: "Show unread messages only (default)",
   notificationsLabel: "Notify me of each new message (account, subject and preview)",
   notifTest: "Test notification",
-  notifHelp: "Nothing shows up? Allow Google Chrome notifications in your system settings (Windows: Settings \u203A Notifications; Mac: System Settings \u203A Notifications).",
+  notifHelp: "No system notification? Allow Google Chrome notifications in your system settings (Windows: Settings \u203A Notifications; Mac: System Settings \u203A Notifications).",
+  notifStyleLabel: "Notification type",
+  notifStyleWindow: "Gmail Preview window (recommended)",
+  notifStyleSystem: "System notification",
+  notifStyleBoth: "Both",
+  notifDurationLabel: "Window display time",
+  secondsShort: "{0} s",
+  untilClosed: "Until closed",
+  notifPositionLabel: "Window position",
+  positionBottomRight: "Bottom right",
+  positionTopRight: "Top right",
   privacyNote: "Your messages never leave your browser: the extension talks directly to Google, with no server in between."
 };
 var dictionaries = { fr, en };
@@ -279,8 +319,12 @@ var DEFAULT_SETTINGS = {
   markReadOnOpen: true,
   alwaysShowImages: false,
   unreadOnly: true,
-  notifications: true
+  notifications: true,
+  notificationStyle: "window",
+  notificationSeconds: 8,
+  notificationPosition: "bottom-right"
 };
+var NOTIFICATION_SECONDS_CHOICES = [5, 8, 15, 30, 0];
 var POLL_CHOICES = [1, 2, 5, 10, 15];
 var MAX_THREADS_CHOICES = [10, 20, 30, 50];
 async function getSettings() {
@@ -378,7 +422,7 @@ async function accountsCard(settings) {
         "li",
         {},
         h("span", { class: "account-rank" }, String(index + 1)),
-        avatar(email, email),
+        avatar(email, email, accountHue(index)),
         h("span", { class: "account-email" }, email),
         reorderButton("arrowUp", t("moveUp", email), index, -1, accounts.length),
         reorderButton("arrowDown", t("moveDown", email), index, 1, accounts.length),
@@ -442,6 +486,19 @@ function prefsCard(settings) {
     checkbox("mark-read", t("markReadLabel"), settings.markReadOnOpen, (markReadOnOpen) => void saveSettings({ markReadOnOpen })),
     checkbox("show-images", t("showImagesLabel"), settings.alwaysShowImages, (alwaysShowImages) => void saveSettings({ alwaysShowImages })),
     checkbox("notifications", t("notificationsLabel"), settings.notifications, (notifications) => void saveSettings({ notifications })),
+    select("notif-style", t("notifStyleLabel"), settings.notificationStyle, [
+      { value: "window", label: t("notifStyleWindow") },
+      { value: "system", label: t("notifStyleSystem") },
+      { value: "both", label: t("notifStyleBoth") }
+    ], (notificationStyle) => void saveSettings({ notificationStyle })),
+    select("notif-seconds", t("notifDurationLabel"), settings.notificationSeconds, NOTIFICATION_SECONDS_CHOICES.map((n) => ({
+      value: n,
+      label: n === 0 ? t("untilClosed") : t("secondsShort", n)
+    })), (notificationSeconds) => void saveSettings({ notificationSeconds })),
+    select("notif-position", t("notifPositionLabel"), settings.notificationPosition, [
+      { value: "bottom-right", label: t("positionBottomRight") },
+      { value: "top-right", label: t("positionTopRight") }
+    ], (notificationPosition) => void saveSettings({ notificationPosition })),
     notificationTest()
   );
 }
