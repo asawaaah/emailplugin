@@ -6,7 +6,7 @@ import { GmailClient, gmailWebUrl } from '../lib/gmail';
 import { formatLongDate, formatShortDate, setLanguage, t, unreadLabel } from '../lib/i18n';
 import { RemoteError, send } from '../lib/messages';
 import { buildEmailDocument, hasRemoteContent, textToHtml } from '../lib/mime';
-import { getAccountStates, getAccounts, getSettings } from '../lib/storage';
+import { getAccountStates, getAccounts, getCollapsed, getSettings, saveSettings, setCollapsed } from '../lib/storage';
 import type { MessageDetail, Settings, ThreadSummary } from '../lib/types';
 
 type SectionStatus = 'loading' | 'ok' | 'error' | 'reauth';
@@ -16,6 +16,7 @@ interface Section {
   status: SectionStatus;
   threads: ThreadSummary[];
   unread: number | null;
+  collapsed: boolean;
   el: HTMLElement;
 }
 
@@ -71,6 +72,7 @@ function renderHeader(): HTMLElement {
     { class: 'app-header' },
     h('span', { class: 'app-logo' }, icon('mail', 22)),
     h('h1', { class: 'app-title' }, t('appName')),
+    renderFilter(),
     iconButton('refresh', t('refresh'), () => void loadAll()),
     iconButton('add', t('addAccount'), () => void addAccount()),
     iconButton('settings', t('settings'), () => {
@@ -78,6 +80,25 @@ function renderHeader(): HTMLElement {
       window.close();
     }),
   );
+}
+
+/** Bascule « Non lus / Tous », mémorisée dans les réglages. */
+function renderFilter(): HTMLElement {
+  const choice = (unreadOnly: boolean, label: string): HTMLButtonElement => {
+    const button = h('button', { type: 'button', class: 'segment', 'aria-pressed': String(settings.unreadOnly === unreadOnly) }, label);
+    button.addEventListener('click', () => {
+      if (settings.unreadOnly === unreadOnly) return;
+      settings.unreadOnly = unreadOnly;
+      void saveSettings({ unreadOnly });
+      for (const el of button.parentElement?.querySelectorAll('.segment') ?? []) {
+        el.setAttribute('aria-pressed', String(el === button));
+      }
+      showList();
+      void loadAll();
+    });
+    return button;
+  };
+  return h('div', { class: 'segmented', role: 'group', 'aria-label': t('filterLabel') }, choice(true, t('filterUnread')), choice(false, t('filterAll')));
 }
 
 async function addAccount(): Promise<void> {
@@ -112,18 +133,36 @@ function emptyState(title: string, text: string, actionLabel: string, action: ()
 
 function renderSection(section: Section): void {
   const unreadText = section.unread === null ? '' : unreadLabel(section.unread);
-  const header = h(
-    'div',
-    { class: 'section-header' },
+  const toggle = h(
+    'button',
+    {
+      type: 'button',
+      class: 'section-toggle',
+      'aria-expanded': String(!section.collapsed),
+      title: t(section.collapsed ? 'expand' : 'collapse', section.email),
+    },
+    h('span', { class: 'chevron' }, icon('expandMore')),
     avatar(section.email, section.email),
     h(
-      'div',
+      'span',
       { class: 'section-title' },
       h('span', { class: 'section-email' }, section.email),
       h('span', { class: `section-unread ${section.unread ? 'has-unread' : ''}` }, unreadText),
     ),
+  );
+  toggle.addEventListener('click', () => void toggleSection(section));
+  const header = h(
+    'div',
+    { class: 'section-header' },
+    toggle,
     iconButton('openInNew', t('openGmail'), () => openTab(gmailWebUrl(section.email))),
   );
+  section.el.classList.toggle('collapsed', section.collapsed);
+
+  if (section.collapsed) {
+    section.el.replaceChildren(header);
+    return;
+  }
 
   let body: HTMLElement;
   switch (section.status) {
@@ -150,7 +189,7 @@ function renderSection(section: Section): void {
     case 'ok':
       body = section.threads.length
         ? h('ul', { class: 'thread-list' }, ...section.threads.map((thread) => renderThreadRow(section, thread)))
-        : h('p', { class: 'section-message muted' }, t('inboxEmpty'));
+        : h('p', { class: 'section-message muted' }, t(settings.unreadOnly ? 'noUnreadMail' : 'inboxEmpty'));
       break;
   }
 
@@ -168,18 +207,14 @@ function renderThreadRow(section: Section, thread: ThreadSummary): HTMLElement {
       role: 'button',
       'aria-label': `${thread.from.name} — ${thread.subject || t('noSubject')}`,
     },
+    h('span', { class: 'thread-from' }, h('span', { class: 'thread-name' }, thread.from.name), count),
     h(
       'div',
-      { class: 'thread-main' },
-      h(
-        'div',
-        { class: 'thread-top' },
-        h('span', { class: 'thread-from' }, h('span', { class: 'thread-name' }, thread.from.name), count),
-        h('span', { class: 'thread-date' }, formatShortDate(thread.date)),
-      ),
+      { class: 'thread-text' },
       h('div', { class: 'thread-subject' }, thread.subject || t('noSubject')),
       h('div', { class: 'thread-snippet' }, thread.snippet),
     ),
+    h('span', { class: 'thread-date' }, formatShortDate(thread.date)),
     h(
       'div',
       { class: 'thread-actions' },
@@ -207,7 +242,11 @@ async function loadAccount(email: string): Promise<void> {
   renderSection(section);
   const client = clientFor(email);
   try {
-    const [threads, unread] = await Promise.all([client.listInboxThreads(settings.maxThreads), client.getInboxUnread()]);
+    // Une section repliée n'a besoin que du nombre de non lus.
+    const [threads, unread] = await Promise.all([
+      section.collapsed ? Promise.resolve([]) : client.listInboxThreads(settings.maxThreads, settings.unreadOnly),
+      client.getInboxUnread(),
+    ]);
     section.threads = threads;
     section.unread = unread;
     section.status = 'ok';
@@ -215,6 +254,13 @@ async function loadAccount(email: string): Promise<void> {
     section.status = isAuthError(error) ? 'reauth' : 'error';
   }
   renderSection(section);
+}
+
+async function toggleSection(section: Section): Promise<void> {
+  section.collapsed = !section.collapsed;
+  await setCollapsed(section.email, section.collapsed);
+  if (section.collapsed || section.status !== 'ok') renderSection(section);
+  if (!section.collapsed) await loadAccount(section.email);
 }
 
 async function reconnect(email: string): Promise<void> {
@@ -235,15 +281,19 @@ async function loadAll(): Promise<void> {
 
 // ---------- Actions rapides ----------
 
-function applyLocally(section: Section, thread: ThreadSummary, action: QuickAction): () => void {
+/**
+ * Applique l'action à l'écran avant la réponse de Gmail ; renvoie de quoi
+ * l'annuler en cas d'échec. `keepRow` garde la ligne visible (conversation
+ * ouverte puis marquée comme lue dans la vue « Non lus »).
+ */
+function applyLocally(section: Section, thread: ThreadSummary, action: QuickAction, keepRow = false): () => void {
   const index = section.threads.indexOf(thread);
   const wasUnread = thread.unread;
   const unreadBefore = section.unread;
-  if (action === 'markRead' || action === 'markUnread') {
-    thread.unread = action === 'markUnread';
-  } else if (index >= 0) {
-    section.threads.splice(index, 1);
-  }
+  const isLabelChange = action === 'markRead' || action === 'markUnread';
+  const removesRow = !isLabelChange || (action === 'markRead' && settings.unreadOnly && !keepRow);
+  thread.unread = action === 'markUnread' ? true : action === 'markRead' ? false : wasUnread;
+  if (removesRow && index >= 0) section.threads.splice(index, 1);
   let delta = 0;
   if (action === 'markUnread') delta = wasUnread ? 0 : 1;
   else if (wasUnread) delta = -1; // lu, archivé, supprimé ou spam : un non lu de moins
@@ -252,7 +302,7 @@ function applyLocally(section: Section, thread: ThreadSummary, action: QuickActi
   return () => {
     thread.unread = wasUnread;
     section.unread = unreadBefore;
-    if (action !== 'markRead' && action !== 'markUnread' && index >= 0) section.threads.splice(index, 0, thread);
+    if (removesRow && index >= 0) section.threads.splice(index, 0, thread);
     renderSection(section);
   };
 }
@@ -407,7 +457,7 @@ async function openThread(section: Section, thread: ThreadSummary): Promise<void
       ...detail.messages.map((m, i) => renderMessage(m, i === lastIndex || m.unread)),
     );
     if (thread.unread && settings.markReadOnOpen) {
-      applyLocally(section, thread, 'markRead');
+      applyLocally(section, thread, 'markRead', true);
       client.markRead(thread.id).then(refreshBadge, () => undefined);
     }
   } catch (error) {
@@ -434,6 +484,7 @@ async function init(): Promise<void> {
   document.title = t('appName');
   const accounts = await getAccounts();
   const states = await getAccountStates();
+  const collapsed = new Set(await getCollapsed());
 
   sections.clear();
   listView.replaceChildren();
@@ -454,7 +505,14 @@ async function init(): Promise<void> {
 
   for (const { email } of accounts) {
     const el = h('section', { class: 'account-section', 'aria-label': email });
-    const section: Section = { email, status: 'loading', threads: [], unread: states[email]?.unread ?? null, el };
+    const section: Section = {
+      email,
+      status: 'loading',
+      threads: [],
+      unread: states[email]?.unread ?? null,
+      collapsed: collapsed.has(email),
+      el,
+    };
     sections.set(email, section);
     listView.append(el);
     renderSection(section);

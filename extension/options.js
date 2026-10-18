@@ -34,6 +34,8 @@ var PATHS = {
   attach: "M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5a2.5 2.5 0 0 1 5 0v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5a2.5 2.5 0 0 0 5 0V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z",
   image: "M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z",
   warning: "M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z",
+  arrowUp: "M4 12l1.41 1.41L11 7.83V20h2V7.83l5.58 5.59L20 12l-8-8-8 8z",
+  arrowDown: "M20 12l-1.41-1.41L13 16.17V4h-2v12.17l-5.58-5.59L4 12l8 8 8-8z",
   close: "M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z",
   mail: "M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4V8l8 5 8-5v10zm-8-7L4 6h16l-8 5z"
 };
@@ -109,6 +111,17 @@ var fr = {
   archived: "Conversation archiv\xE9e",
   deleted: "Conversation supprim\xE9e",
   spammed: "Signal\xE9e comme spam",
+  filterUnread: "Non lus",
+  filterAll: "Tous",
+  filterLabel: "Conversations affich\xE9es",
+  noUnreadMail: "Aucun courriel non lu.",
+  collapse: "Replier {0}",
+  expand: "D\xE9plier {0}",
+  notifFrom: "De : {0}",
+  notifManyTitle: "{0} nouveaux courriels",
+  notifManyMessage: "Dernier : {0}",
+  notifTestTitle: "Notification de test",
+  notifTestMessage: "Les notifications d\u2019Aper\xE7u Gmail fonctionnent.",
   // Page d'options
   optionsTitle: "R\xE9glages \u2014 Aper\xE7u Gmail",
   googleSection: "Connexion Google",
@@ -137,6 +150,13 @@ var fr = {
   maxThreadsLabel: "Conversations affich\xE9es par compte",
   markReadLabel: "Marquer comme lu \xE0 l\u2019ouverture",
   showImagesLabel: "Toujours afficher les images (peut permettre le pistage)",
+  orderHelp: "L\u2019ordre de cette liste est celui du popup. Utilisez les fl\xE8ches pour le changer.",
+  moveUp: "Monter {0}",
+  moveDown: "Descendre {0}",
+  unreadOnlyLabel: "N\u2019afficher que les courriels non lus (par d\xE9faut)",
+  notificationsLabel: "Notification \xE0 chaque nouveau courriel (compte, objet et aper\xE7u)",
+  notifTest: "Tester la notification",
+  notifHelp: "Rien ne s\u2019affiche ? Autorisez les notifications de Google Chrome dans les r\xE9glages de votre syst\xE8me (Windows : Param\xE8tres \u203A Notifications ; Mac : R\xE9glages Syst\xE8me \u203A Notifications).",
   privacyNote: "Vos courriels ne quittent jamais votre navigateur : l\u2019extension parle directement \xE0 Google, sans serveur interm\xE9diaire."
 };
 var en = {
@@ -176,6 +196,17 @@ var en = {
   archived: "Conversation archived",
   deleted: "Conversation deleted",
   spammed: "Reported as spam",
+  filterUnread: "Unread",
+  filterAll: "All",
+  filterLabel: "Conversations shown",
+  noUnreadMail: "No unread messages.",
+  collapse: "Collapse {0}",
+  expand: "Expand {0}",
+  notifFrom: "From: {0}",
+  notifManyTitle: "{0} new messages",
+  notifManyMessage: "Latest: {0}",
+  notifTestTitle: "Test notification",
+  notifTestMessage: "Gmail Preview notifications are working.",
   optionsTitle: "Settings \u2014 Gmail Preview",
   googleSection: "Google sign-in",
   googleHelp: "Paste the OAuth client ID of your Google Cloud project (type \u201CWeb application\u201D). The step-by-step guide is in the project README.",
@@ -203,6 +234,13 @@ var en = {
   maxThreadsLabel: "Conversations shown per account",
   markReadLabel: "Mark as read when opened",
   showImagesLabel: "Always show images (may allow tracking)",
+  orderHelp: "The order of this list is the order in the popup. Use the arrows to change it.",
+  moveUp: "Move {0} up",
+  moveDown: "Move {0} down",
+  unreadOnlyLabel: "Show unread messages only (default)",
+  notificationsLabel: "Notify me of each new message (account, subject and preview)",
+  notifTest: "Test notification",
+  notifHelp: "Nothing shows up? Allow Google Chrome notifications in your system settings (Windows: Settings \u203A Notifications; Mac: System Settings \u203A Notifications).",
   privacyNote: "Your messages never leave your browser: the extension talks directly to Google, with no server in between."
 };
 var dictionaries = { fr, en };
@@ -239,7 +277,9 @@ var DEFAULT_SETTINGS = {
   pollMinutes: 1,
   maxThreads: 20,
   markReadOnOpen: true,
-  alwaysShowImages: false
+  alwaysShowImages: false,
+  unreadOnly: true,
+  notifications: true
 };
 var POLL_CHOICES = [1, 2, 5, 10, 15];
 var MAX_THREADS_CHOICES = [10, 20, 30, 50];
@@ -255,6 +295,16 @@ async function saveSettings(patch) {
 async function getAccounts() {
   const { accounts } = await chrome.storage.local.get("accounts");
   return accounts ?? [];
+}
+async function saveAccounts(accounts) {
+  await chrome.storage.local.set({ accounts });
+}
+function moveAccount(list, index, direction) {
+  const target = index + direction;
+  if (index < 0 || index >= list.length || target < 0 || target >= list.length) return list;
+  const next = [...list];
+  [next[index], next[target]] = [next[target], next[index]];
+  return next;
 }
 
 // src/options/options.ts
@@ -303,6 +353,20 @@ function googleCard(settings) {
     copyField("extension-id", t("extensionIdLabel"), chrome.runtime.id)
   );
 }
+function reorderButton(name, label, index, direction, total) {
+  const button = iconButton(name, label, () => {
+    void getAccounts().then((accounts) => saveAccounts(moveAccount(accounts, index, direction))).then(render).then(() => {
+      const buttons = document.querySelectorAll(`.account-list li:nth-child(${index + direction + 1}) .icon-button`);
+      buttons[direction === -1 ? 0 : 1]?.focus();
+    });
+  });
+  const target = index + direction;
+  if (target < 0 || target >= total) {
+    button.disabled = true;
+    button.classList.add("invisible");
+  }
+  return button;
+}
 async function accountsCard(settings) {
   const accounts = await getAccounts();
   const feedback = status();
@@ -310,11 +374,14 @@ async function accountsCard(settings) {
     "ul",
     { class: "account-list" },
     ...accounts.map(
-      ({ email }) => h(
+      ({ email }, index) => h(
         "li",
         {},
+        h("span", { class: "account-rank" }, String(index + 1)),
         avatar(email, email),
         h("span", { class: "account-email" }, email),
+        reorderButton("arrowUp", t("moveUp", email), index, -1, accounts.length),
+        reorderButton("arrowDown", t("moveDown", email), index, 1, accounts.length),
         iconButton("close", t("remove"), () => {
           if (!window.confirm(t("removeConfirm", email))) return;
           void send({ type: "removeAccount", email }).then(render);
@@ -341,7 +408,8 @@ async function accountsCard(settings) {
     });
   });
   feedback.id = "accounts-status";
-  return card("accountsSection", list, h("div", { class: "row" }, add), feedback);
+  const help = accounts.length > 1 ? h("p", { class: "help" }, t("orderHelp")) : null;
+  return card("accountsSection", help, list, h("div", { class: "row" }, add), feedback);
 }
 function select(id, label, value, choices, onChange) {
   const el = h("select", { id }, ...choices.map((c) => h("option", { value: String(c.value), selected: c.value === value }, c.label)));
@@ -356,6 +424,11 @@ function checkbox(id, label, checked, onChange) {
   input.addEventListener("change", () => onChange(input.checked));
   return h("div", { class: "field check" }, input, h("label", { for: id }, label));
 }
+function notificationTest() {
+  const button = h("button", { type: "button", class: "outlined-button" }, t("notifTest"));
+  button.addEventListener("click", () => void send({ type: "testNotification" }));
+  return h("div", { class: "field notif-test" }, button, h("p", { class: "help" }, t("notifHelp")));
+}
 function prefsCard(settings) {
   return card(
     "prefsSection",
@@ -365,8 +438,11 @@ function prefsCard(settings) {
     ], (language) => void saveSettings({ language }).then(render)),
     select("poll", t("pollLabel"), settings.pollMinutes, POLL_CHOICES.map((m) => ({ value: m, label: t("minutes", m) })), (pollMinutes) => void saveSettings({ pollMinutes })),
     select("max-threads", t("maxThreadsLabel"), settings.maxThreads, MAX_THREADS_CHOICES.map((n) => ({ value: n, label: String(n) })), (maxThreads) => void saveSettings({ maxThreads })),
+    checkbox("unread-only", t("unreadOnlyLabel"), settings.unreadOnly, (unreadOnly) => void saveSettings({ unreadOnly })),
     checkbox("mark-read", t("markReadLabel"), settings.markReadOnOpen, (markReadOnOpen) => void saveSettings({ markReadOnOpen })),
-    checkbox("show-images", t("showImagesLabel"), settings.alwaysShowImages, (alwaysShowImages) => void saveSettings({ alwaysShowImages }))
+    checkbox("show-images", t("showImagesLabel"), settings.alwaysShowImages, (alwaysShowImages) => void saveSettings({ alwaysShowImages })),
+    checkbox("notifications", t("notificationsLabel"), settings.notifications, (notifications) => void saveSettings({ notifications })),
+    notificationTest()
   );
 }
 async function render() {

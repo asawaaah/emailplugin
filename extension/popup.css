@@ -1,6 +1,6 @@
-/* Popup : 460 × 580 px au plus (Chrome limite un popup à 800 × 600). */
-body.popup { width: 460px; }
-#app { display: flex; flex-direction: column; height: 580px; }
+/* Popup : 800 × 600 px, le maximum permis par Chrome pour une extension. */
+body.popup { width: 800px; }
+#app { display: flex; flex-direction: column; height: 600px; }
 
 .app-header {
   flex: none;
@@ -13,6 +13,14 @@ body.popup { width: 460px; }
 .app-logo { color: #ea4335; margin-right: 8px; }
 .app-title { flex: 1; margin: 0; font-size: 16px; font-weight: 600; }
 
+/* Bascule « Non lus / Tous » */
+.segmented { display: inline-flex; margin-right: 8px; border: 1px solid var(--outline); border-radius: 999px; overflow: hidden; }
+.segment { min-height: 32px; padding: 0 14px; border: 0; background: transparent; color: var(--text-muted); font-weight: 500; }
+.segment + .segment { border-left: 1px solid var(--outline); }
+.segment:hover { background: var(--surface-strong); }
+.segment[aria-pressed="true"] { background: var(--primary-soft); color: var(--text); }
+.segment:focus-visible, .section-toggle:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+
 .list-view, .detail-view { flex: 1; overflow-y: auto; }
 
 /* Sections par compte */
@@ -23,11 +31,26 @@ body.popup { width: 460px; }
   z-index: 1;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 6px 8px 12px;
+  gap: 4px;
+  padding: 4px 6px 4px 4px;
   background: var(--bg);
   border-bottom: 1px solid var(--outline-soft);
 }
+.section-toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px 4px 4px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+}
+.section-toggle:hover { background: var(--surface-hover); }
+.chevron { display: grid; place-items: center; color: var(--text-muted); transition: transform .15s ease; }
+.account-section.collapsed .chevron { transform: rotate(-90deg); }
 .section-title { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .section-email { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .section-unread { font-size: 12px; color: var(--text-muted); }
@@ -42,9 +65,11 @@ body.popup { width: 460px; }
 .thread-list { list-style: none; margin: 0; padding: 0; }
 .thread {
   position: relative;
-  display: flex;
-  gap: 8px;
-  padding: 8px 12px 8px 22px;
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 14px 8px 26px;
   border-bottom: 1px solid var(--outline-soft);
   cursor: pointer;
 }
@@ -52,19 +77,18 @@ body.popup { width: 460px; }
 .thread.unread::before {
   content: "";
   position: absolute;
-  left: 9px;
-  top: 15px;
+  left: 11px;
+  top: calc(50% - 3.5px);
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: var(--unread-dot);
 }
-.thread-main { flex: 1; min-width: 0; }
-.thread-top { display: flex; align-items: baseline; gap: 6px; }
-.thread-from { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 6px; }
+.thread-text { min-width: 0; }
+.thread-from { min-width: 0; display: flex; align-items: baseline; gap: 6px; }
 .thread-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thread-count { flex: none; font-size: 12px; font-weight: 400; color: var(--text-muted); }
-.thread-date { flex: none; font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.thread-date { min-width: 56px; text-align: right; font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .thread-subject, .thread-snippet { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thread-snippet { color: var(--text-muted); font-size: 13px; }
 .thread.unread .thread-from, .thread.unread .thread-subject, .thread.unread .thread-date { font-weight: 700; color: var(--text); }

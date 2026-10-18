@@ -2,11 +2,12 @@
 // met à jour le badge de l'icône et gère la connexion Google.
 
 import { AuthError, addAccount, getToken, removeAccount } from './lib/auth';
-import { AuthRequiredError, GmailClient } from './lib/gmail';
+import { AuthRequiredError, GmailClient, gmailWebUrl } from './lib/gmail';
 import { setLanguage, t } from './lib/i18n';
 import type { ErrorCode, Request, Response } from './lib/messages';
-import { getAccountStates, getAccounts, getSettings, saveAccountStates } from './lib/storage';
-import type { AccountState } from './lib/types';
+import { MAX_INDIVIDUAL, detectNew, keepRecent, notificationId, parseNotificationId } from './lib/notify';
+import { getAccountStates, getAccounts, getSeen, getSettings, saveAccountStates, saveSeen } from './lib/storage';
+import type { AccountState, MessageMeta, SeenState, Settings } from './lib/types';
 
 const ALARM = 'poll';
 const BADGE_RED = '#d93025';
@@ -41,6 +42,52 @@ async function updateBadge(states: AccountState[]): Promise<void> {
   await chrome.action.setTitle({ title: [t('appName'), ...lines].join('\n') });
 }
 
+const ICON = 'icons/icon-128.png';
+
+function notifyMessage(email: string, message: MessageMeta): void {
+  chrome.notifications.create(notificationId(email, message.threadId), {
+    type: 'basic',
+    iconUrl: ICON,
+    title: message.subject || t('noSubject'),
+    message: message.snippet,
+    // Compte qui a reçu le courriel et expéditeur, sous le titre.
+    contextMessage: `${email} · ${t('notifFrom', message.from.name)}`,
+    buttons: [{ title: t('markRead') }, { title: t('archive') }],
+    priority: 1,
+  });
+}
+
+function notifySummary(email: string, messages: MessageMeta[]): void {
+  const latest = messages[0];
+  chrome.notifications.create(notificationId(email, null), {
+    type: 'basic',
+    iconUrl: ICON,
+    title: t('notifManyTitle', messages.length),
+    message: latest ? t('notifManyMessage', `${latest.from.name} — ${latest.subject || t('noSubject')}`) : '',
+    contextMessage: email,
+    priority: 1,
+  });
+}
+
+/** Repère les nouveaux non lus d'un compte et affiche les notifications. */
+async function checkNewMessages(
+  email: string,
+  client: GmailClient,
+  settings: Settings,
+  previous: SeenState | undefined,
+): Promise<SeenState> {
+  const now = Date.now();
+  const ids = await client.listUnreadMessageIds(20);
+  const { candidates, next } = detectNew(previous, ids, now);
+  if (!settings.notifications || !candidates.length || !previous) return next;
+
+  const metas = await Promise.all(candidates.slice(0, 10).map((id) => client.getMessageMeta(id)));
+  const fresh = keepRecent(metas, previous.checkedAt).sort((a, b) => b.date - a.date);
+  if (fresh.length > MAX_INDIVIDUAL) notifySummary(email, fresh);
+  else fresh.forEach((m) => notifyMessage(email, m));
+  return next;
+}
+
 let polling: Promise<void> | null = null;
 
 /** Vérifie tous les comptes (une seule vérification à la fois). */
@@ -49,11 +96,21 @@ function pollAll(): Promise<void> {
     polling = (async () => {
       const accounts = await getAccounts();
       const previous = await getAccountStates();
+      const settings = await getSettings();
+      setLanguage(settings.language);
+      const seen = await getSeen();
+      const nextSeen: Record<string, SeenState> = {};
       const results = await Promise.all(
         accounts.map(async ({ email }): Promise<AccountState> => {
           const client = new GmailClient((forceRefresh) => getToken(email, { forceRefresh }));
           try {
             const unread = await client.getInboxUnread();
+            try {
+              nextSeen[email] = await checkNewMessages(email, client, settings, seen[email]);
+            } catch {
+              // Sans gravité : on réessaiera à la prochaine vérification.
+              if (seen[email]) nextSeen[email] = seen[email];
+            }
             return { email, unread, status: 'ok', checkedAt: Date.now() };
           } catch (error) {
             const reauth = error instanceof AuthRequiredError || error instanceof AuthError;
@@ -68,6 +125,9 @@ function pollAll(): Promise<void> {
         }),
       );
       await saveAccountStates(Object.fromEntries(results.map((s) => [s.email, s])));
+      // Garde l'état des comptes non vérifiés cette fois-ci (reconnexion requise).
+      for (const { email } of accounts) if (!nextSeen[email] && seen[email]) nextSeen[email] = seen[email];
+      await saveSeen(nextSeen);
       await updateBadge(results);
     })().finally(() => {
       polling = null;
@@ -100,6 +160,18 @@ async function handle(request: Request): Promise<unknown> {
     case 'refresh':
       await pollAll();
       return null;
+    case 'testNotification': {
+      const settings = await getSettings();
+      setLanguage(settings.language);
+      chrome.notifications.create(`test|${Date.now()}`, {
+        type: 'basic',
+        iconUrl: ICON,
+        title: t('notifTestTitle'),
+        message: t('notifTestMessage'),
+        contextMessage: t('appName'),
+      });
+      return null;
+    }
   }
 }
 
@@ -131,4 +203,22 @@ chrome.storage.onChanged.addListener((changes, area) => {
   const after = changes.settings.newValue as { pollMinutes?: number; language?: string } | undefined;
   if (before?.pollMinutes !== after?.pollMinutes) void scheduleAlarm();
   if (before?.language !== after?.language) void getAccountStates().then((s) => updateBadge(Object.values(s)));
+});
+
+// ---------- Clics sur les notifications ----------
+
+chrome.notifications.onClicked.addListener((id) => {
+  const target = parseNotificationId(id);
+  chrome.notifications.clear(id);
+  if (target) void chrome.tabs.create({ url: gmailWebUrl(target.email, target.threadId ?? undefined) });
+});
+
+chrome.notifications.onButtonClicked.addListener((id, buttonIndex) => {
+  const target = parseNotificationId(id);
+  chrome.notifications.clear(id);
+  if (!target?.threadId) return;
+  const { email, threadId } = target;
+  const client = new GmailClient((forceRefresh) => getToken(email, { forceRefresh }));
+  const action = buttonIndex === 0 ? client.markRead(threadId) : client.archive(threadId);
+  action.then(pollAll, (error: unknown) => console.warn('Action depuis la notification impossible', error instanceof Error ? error.name : error));
 });

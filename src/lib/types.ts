@@ -14,6 +14,10 @@ export interface Settings {
   markReadOnOpen: boolean;
   /** Afficher les images distantes sans demander (elles peuvent servir au pistage). */
   alwaysShowImages: boolean;
+  /** N'afficher que les conversations non lues dans le popup. */
+  unreadOnly: boolean;
+  /** Notification de bureau à chaque nouveau courriel. */
+  notifications: boolean;
 }
 
 export interface Account {
@@ -68,6 +72,23 @@ export interface MessageDetail {
   html: string | null;
   text: string | null;
   attachments: Attachment[];
+}
+
+/** En-tête d'un message, pour les notifications. */
+export interface MessageMeta {
+  id: string;
+  threadId: string;
+  from: Person;
+  subject: string;
+  snippet: string;
+  date: number;
+}
+
+/** Messages non lus déjà vus par compte, pour ne notifier que les nouveaux. */
+export interface SeenState {
+  ids: string[];
+  /** Dernière vérification réussie (ms). */
+  checkedAt: number;
 }
 
 export interface ThreadDetail {

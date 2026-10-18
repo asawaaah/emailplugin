@@ -3,7 +3,7 @@
 import { h, iconButton, avatar } from '../lib/dom';
 import { setLanguage, t, type MessageKey } from '../lib/i18n';
 import { RemoteError, send } from '../lib/messages';
-import { MAX_THREADS_CHOICES, POLL_CHOICES, getAccounts, getSettings, saveSettings } from '../lib/storage';
+import { MAX_THREADS_CHOICES, POLL_CHOICES, getAccounts, getSettings, moveAccount, saveAccounts, saveSettings } from '../lib/storage';
 import type { Language, Settings } from '../lib/types';
 
 const app = document.getElementById('app') as HTMLElement;
@@ -56,6 +56,26 @@ function googleCard(settings: Settings): HTMLElement {
   );
 }
 
+/** Flèche pour changer le rang d'un compte (ordre d'affichage du popup). */
+function reorderButton(name: 'arrowUp' | 'arrowDown', label: string, index: number, direction: -1 | 1, total: number): HTMLElement {
+  const button = iconButton(name, label, () => {
+    void getAccounts()
+      .then((accounts) => saveAccounts(moveAccount(accounts, index, direction)))
+      .then(render)
+      .then(() => {
+        // Garde le focus sur la même flèche du compte déplacé.
+        const buttons = document.querySelectorAll<HTMLButtonElement>(`.account-list li:nth-child(${index + direction + 1}) .icon-button`);
+        buttons[direction === -1 ? 0 : 1]?.focus();
+      });
+  });
+  const target = index + direction;
+  if (target < 0 || target >= total) {
+    button.disabled = true;
+    button.classList.add('invisible');
+  }
+  return button;
+}
+
 async function accountsCard(settings: Settings): Promise<HTMLElement> {
   const accounts = await getAccounts();
   const feedback = status();
@@ -63,12 +83,15 @@ async function accountsCard(settings: Settings): Promise<HTMLElement> {
     ? h(
         'ul',
         { class: 'account-list' },
-        ...accounts.map(({ email }) =>
+        ...accounts.map(({ email }, index) =>
           h(
             'li',
             {},
+            h('span', { class: 'account-rank' }, String(index + 1)),
             avatar(email, email),
             h('span', { class: 'account-email' }, email),
+            reorderButton('arrowUp', t('moveUp', email), index, -1, accounts.length),
+            reorderButton('arrowDown', t('moveDown', email), index, 1, accounts.length),
             iconButton('close', t('remove'), () => {
               if (!window.confirm(t('removeConfirm', email))) return;
               void send({ type: 'removeAccount', email }).then(render);
@@ -99,7 +122,8 @@ async function accountsCard(settings: Settings): Promise<HTMLElement> {
       });
   });
   feedback.id = 'accounts-status';
-  return card('accountsSection', list, h('div', { class: 'row' }, add), feedback);
+  const help = accounts.length > 1 ? h('p', { class: 'help' }, t('orderHelp')) : null;
+  return card('accountsSection', help, list, h('div', { class: 'row' }, add), feedback);
 }
 
 function select<T extends string | number>(id: string, label: string, value: T, choices: ReadonlyArray<{ value: T; label: string }>, onChange: (value: T) => void): HTMLElement {
@@ -117,6 +141,12 @@ function checkbox(id: string, label: string, checked: boolean, onChange: (checke
   return h('div', { class: 'field check' }, input, h('label', { for: id }, label));
 }
 
+function notificationTest(): HTMLElement {
+  const button = h('button', { type: 'button', class: 'outlined-button' }, t('notifTest'));
+  button.addEventListener('click', () => void send({ type: 'testNotification' }));
+  return h('div', { class: 'field notif-test' }, button, h('p', { class: 'help' }, t('notifHelp')));
+}
+
 function prefsCard(settings: Settings): HTMLElement {
   return card(
     'prefsSection',
@@ -126,8 +156,11 @@ function prefsCard(settings: Settings): HTMLElement {
     ], (language) => void saveSettings({ language }).then(render)),
     select<number>('poll', t('pollLabel'), settings.pollMinutes, POLL_CHOICES.map((m) => ({ value: m, label: t('minutes', m) })), (pollMinutes) => void saveSettings({ pollMinutes })),
     select<number>('max-threads', t('maxThreadsLabel'), settings.maxThreads, MAX_THREADS_CHOICES.map((n) => ({ value: n, label: String(n) })), (maxThreads) => void saveSettings({ maxThreads })),
+    checkbox('unread-only', t('unreadOnlyLabel'), settings.unreadOnly, (unreadOnly) => void saveSettings({ unreadOnly })),
     checkbox('mark-read', t('markReadLabel'), settings.markReadOnOpen, (markReadOnOpen) => void saveSettings({ markReadOnOpen })),
     checkbox('show-images', t('showImagesLabel'), settings.alwaysShowImages, (alwaysShowImages) => void saveSettings({ alwaysShowImages })),
+    checkbox('notifications', t('notificationsLabel'), settings.notifications, (notifications) => void saveSettings({ notifications })),
+    notificationTest(),
   );
 }
 

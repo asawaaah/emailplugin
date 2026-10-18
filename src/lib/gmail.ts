@@ -1,7 +1,7 @@
 // Client minimal de l'API Gmail (REST), partagé par le service worker et le popup.
 
 import { extractBody, header, parsePerson, type GmailPart } from './mime';
-import type { MessageDetail, ThreadDetail, ThreadSummary } from './types';
+import type { MessageDetail, MessageMeta, ThreadDetail, ThreadSummary } from './types';
 
 const API = 'https://gmail.googleapis.com/gmail/v1/users/me';
 
@@ -129,14 +129,36 @@ export class GmailClient {
     return label.threadsUnread ?? 0;
   }
 
-  async listInboxThreads(max: number): Promise<ThreadSummary[]> {
-    const list = await this.request<{ threads?: Array<{ id: string }> }>(
-      `/threads?labelIds=INBOX&maxResults=${max}`,
-    );
+  /** Conversations de la boîte de réception ; seulement les non lues avec `unreadOnly`. */
+  async listInboxThreads(max: number, unreadOnly = false): Promise<ThreadSummary[]> {
+    const labels = unreadOnly ? 'labelIds=INBOX&labelIds=UNREAD' : 'labelIds=INBOX';
+    const list = await this.request<{ threads?: Array<{ id: string }> }>(`/threads?${labels}&maxResults=${max}`);
     const ids = (list.threads ?? []).map((t) => t.id);
     const query = 'format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date';
     const threads = await mapLimit(ids, 5, (id) => this.request<GmailThread>(`/threads/${id}?${query}`));
     return threads.map(toSummary);
+  }
+
+  /** Identifiants des derniers messages non lus de la boîte de réception. */
+  async listUnreadMessageIds(max: number): Promise<string[]> {
+    const list = await this.request<{ messages?: Array<{ id: string }> }>(
+      `/messages?labelIds=INBOX&labelIds=UNREAD&maxResults=${max}`,
+    );
+    return (list.messages ?? []).map((m) => m.id);
+  }
+
+  async getMessageMeta(id: string): Promise<MessageMeta> {
+    const query = 'format=metadata&metadataHeaders=From&metadataHeaders=Subject';
+    const message = await this.request<GmailMessage>(`/messages/${id}?${query}`);
+    const headers = message.payload?.headers;
+    return {
+      id: message.id,
+      threadId: message.threadId,
+      from: parsePerson(header(headers, 'From')),
+      subject: header(headers, 'Subject'),
+      snippet: decodeEntities(message.snippet ?? ''),
+      date: Number(message.internalDate ?? 0),
+    };
   }
 
   async getThread(id: string): Promise<ThreadDetail> {

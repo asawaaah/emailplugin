@@ -76,6 +76,10 @@ async function mapLimit(items, limit, fn) {
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
   return results;
 }
+function gmailWebUrl(email, threadId) {
+  const base = `https://mail.google.com/mail/?authuser=${encodeURIComponent(email)}`;
+  return threadId ? `${base}#inbox/${threadId}` : base;
+}
 function toSummary(thread) {
   const messages = thread.messages ?? [];
   const first = messages[0];
@@ -144,14 +148,34 @@ var GmailClient = class {
     const label = await this.request("/labels/INBOX");
     return label.threadsUnread ?? 0;
   }
-  async listInboxThreads(max) {
-    const list = await this.request(
-      `/threads?labelIds=INBOX&maxResults=${max}`
-    );
+  /** Conversations de la boîte de réception ; seulement les non lues avec `unreadOnly`. */
+  async listInboxThreads(max, unreadOnly = false) {
+    const labels = unreadOnly ? "labelIds=INBOX&labelIds=UNREAD" : "labelIds=INBOX";
+    const list = await this.request(`/threads?${labels}&maxResults=${max}`);
     const ids = (list.threads ?? []).map((t2) => t2.id);
     const query = "format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date";
     const threads = await mapLimit(ids, 5, (id) => this.request(`/threads/${id}?${query}`));
     return threads.map(toSummary);
+  }
+  /** Identifiants des derniers messages non lus de la boîte de réception. */
+  async listUnreadMessageIds(max) {
+    const list = await this.request(
+      `/messages?labelIds=INBOX&labelIds=UNREAD&maxResults=${max}`
+    );
+    return (list.messages ?? []).map((m) => m.id);
+  }
+  async getMessageMeta(id) {
+    const query = "format=metadata&metadataHeaders=From&metadataHeaders=Subject";
+    const message = await this.request(`/messages/${id}?${query}`);
+    const headers = message.payload?.headers;
+    return {
+      id: message.id,
+      threadId: message.threadId,
+      from: parsePerson(header(headers, "From")),
+      subject: header(headers, "Subject"),
+      snippet: decodeEntities(message.snippet ?? ""),
+      date: Number(message.internalDate ?? 0)
+    };
   }
   async getThread(id) {
     const thread = await this.request(`/threads/${id}?format=full`);
@@ -189,7 +213,9 @@ var DEFAULT_SETTINGS = {
   pollMinutes: 1,
   maxThreads: 20,
   markReadOnOpen: true,
-  alwaysShowImages: false
+  alwaysShowImages: false,
+  unreadOnly: true,
+  notifications: true
 };
 async function getSettings() {
   const { settings } = await chrome.storage.local.get("settings");
@@ -218,6 +244,13 @@ async function setToken(email, entry) {
   if (entry) tokens[email] = entry;
   else delete tokens[email];
   await chrome.storage.session.set({ tokens });
+}
+async function getSeen() {
+  const { seen } = await chrome.storage.local.get("seen");
+  return seen ?? {};
+}
+async function saveSeen(seen) {
+  await chrome.storage.local.set({ seen });
 }
 
 // src/lib/auth.ts
@@ -377,6 +410,17 @@ var fr = {
   archived: "Conversation archiv\xE9e",
   deleted: "Conversation supprim\xE9e",
   spammed: "Signal\xE9e comme spam",
+  filterUnread: "Non lus",
+  filterAll: "Tous",
+  filterLabel: "Conversations affich\xE9es",
+  noUnreadMail: "Aucun courriel non lu.",
+  collapse: "Replier {0}",
+  expand: "D\xE9plier {0}",
+  notifFrom: "De : {0}",
+  notifManyTitle: "{0} nouveaux courriels",
+  notifManyMessage: "Dernier : {0}",
+  notifTestTitle: "Notification de test",
+  notifTestMessage: "Les notifications d\u2019Aper\xE7u Gmail fonctionnent.",
   // Page d'options
   optionsTitle: "R\xE9glages \u2014 Aper\xE7u Gmail",
   googleSection: "Connexion Google",
@@ -405,6 +449,13 @@ var fr = {
   maxThreadsLabel: "Conversations affich\xE9es par compte",
   markReadLabel: "Marquer comme lu \xE0 l\u2019ouverture",
   showImagesLabel: "Toujours afficher les images (peut permettre le pistage)",
+  orderHelp: "L\u2019ordre de cette liste est celui du popup. Utilisez les fl\xE8ches pour le changer.",
+  moveUp: "Monter {0}",
+  moveDown: "Descendre {0}",
+  unreadOnlyLabel: "N\u2019afficher que les courriels non lus (par d\xE9faut)",
+  notificationsLabel: "Notification \xE0 chaque nouveau courriel (compte, objet et aper\xE7u)",
+  notifTest: "Tester la notification",
+  notifHelp: "Rien ne s\u2019affiche ? Autorisez les notifications de Google Chrome dans les r\xE9glages de votre syst\xE8me (Windows : Param\xE8tres \u203A Notifications ; Mac : R\xE9glages Syst\xE8me \u203A Notifications).",
   privacyNote: "Vos courriels ne quittent jamais votre navigateur : l\u2019extension parle directement \xE0 Google, sans serveur interm\xE9diaire."
 };
 var en = {
@@ -444,6 +495,17 @@ var en = {
   archived: "Conversation archived",
   deleted: "Conversation deleted",
   spammed: "Reported as spam",
+  filterUnread: "Unread",
+  filterAll: "All",
+  filterLabel: "Conversations shown",
+  noUnreadMail: "No unread messages.",
+  collapse: "Collapse {0}",
+  expand: "Expand {0}",
+  notifFrom: "From: {0}",
+  notifManyTitle: "{0} new messages",
+  notifManyMessage: "Latest: {0}",
+  notifTestTitle: "Test notification",
+  notifTestMessage: "Gmail Preview notifications are working.",
   optionsTitle: "Settings \u2014 Gmail Preview",
   googleSection: "Google sign-in",
   googleHelp: "Paste the OAuth client ID of your Google Cloud project (type \u201CWeb application\u201D). The step-by-step guide is in the project README.",
@@ -471,6 +533,13 @@ var en = {
   maxThreadsLabel: "Conversations shown per account",
   markReadLabel: "Mark as read when opened",
   showImagesLabel: "Always show images (may allow tracking)",
+  orderHelp: "The order of this list is the order in the popup. Use the arrows to change it.",
+  moveUp: "Move {0} up",
+  moveDown: "Move {0} down",
+  unreadOnlyLabel: "Show unread messages only (default)",
+  notificationsLabel: "Notify me of each new message (account, subject and preview)",
+  notifTest: "Test notification",
+  notifHelp: "Nothing shows up? Allow Google Chrome notifications in your system settings (Windows: Settings \u203A Notifications; Mac: System Settings \u203A Notifications).",
   privacyNote: "Your messages never leave your browser: the extension talks directly to Google, with no server in between."
 };
 var dictionaries = { fr, en };
@@ -482,6 +551,31 @@ function setLanguage(language) {
 function t(key, ...subs) {
   const template = dictionaries[current][key] ?? fr[key];
   return subs.reduce((text, sub, i) => text.replaceAll(`{${i}}`, String(sub)), template);
+}
+
+// src/lib/notify.ts
+var SEEN_LIMIT = 200;
+var RECENT_MARGIN_MS = 10 * 60 * 1e3;
+var MAX_INDIVIDUAL = 3;
+function detectNew(previous, currentIds, now) {
+  const next = {
+    ids: [.../* @__PURE__ */ new Set([...currentIds, ...previous?.ids ?? []])].slice(0, SEEN_LIMIT),
+    checkedAt: now
+  };
+  if (!previous) return { candidates: [], next };
+  const seen = new Set(previous.ids);
+  return { candidates: currentIds.filter((id) => !seen.has(id)), next };
+}
+function keepRecent(messages, previousCheck) {
+  return messages.filter((m) => m.date >= previousCheck - RECENT_MARGIN_MS);
+}
+function notificationId(email, threadId) {
+  return threadId ? `msg|${email}|${threadId}` : `sum|${email}|${Date.now()}`;
+}
+function parseNotificationId(id) {
+  const [kind, email, rest] = id.split("|");
+  if (!email || kind !== "msg" && kind !== "sum") return null;
+  return { email, threadId: kind === "msg" ? rest ?? null : null };
 }
 
 // src/background.ts
@@ -512,17 +606,61 @@ async function updateBadge(states) {
   );
   await chrome.action.setTitle({ title: [t("appName"), ...lines].join("\n") });
 }
+var ICON = "icons/icon-128.png";
+function notifyMessage(email, message) {
+  chrome.notifications.create(notificationId(email, message.threadId), {
+    type: "basic",
+    iconUrl: ICON,
+    title: message.subject || t("noSubject"),
+    message: message.snippet,
+    // Compte qui a reçu le courriel et expéditeur, sous le titre.
+    contextMessage: `${email} \xB7 ${t("notifFrom", message.from.name)}`,
+    buttons: [{ title: t("markRead") }, { title: t("archive") }],
+    priority: 1
+  });
+}
+function notifySummary(email, messages) {
+  const latest = messages[0];
+  chrome.notifications.create(notificationId(email, null), {
+    type: "basic",
+    iconUrl: ICON,
+    title: t("notifManyTitle", messages.length),
+    message: latest ? t("notifManyMessage", `${latest.from.name} \u2014 ${latest.subject || t("noSubject")}`) : "",
+    contextMessage: email,
+    priority: 1
+  });
+}
+async function checkNewMessages(email, client, settings, previous) {
+  const now = Date.now();
+  const ids = await client.listUnreadMessageIds(20);
+  const { candidates, next } = detectNew(previous, ids, now);
+  if (!settings.notifications || !candidates.length || !previous) return next;
+  const metas = await Promise.all(candidates.slice(0, 10).map((id) => client.getMessageMeta(id)));
+  const fresh = keepRecent(metas, previous.checkedAt).sort((a, b) => b.date - a.date);
+  if (fresh.length > MAX_INDIVIDUAL) notifySummary(email, fresh);
+  else fresh.forEach((m) => notifyMessage(email, m));
+  return next;
+}
 var polling = null;
 function pollAll() {
   if (!polling) {
     polling = (async () => {
       const accounts = await getAccounts();
       const previous = await getAccountStates();
+      const settings = await getSettings();
+      setLanguage(settings.language);
+      const seen = await getSeen();
+      const nextSeen = {};
       const results = await Promise.all(
         accounts.map(async ({ email }) => {
           const client = new GmailClient((forceRefresh) => getToken(email, { forceRefresh }));
           try {
             const unread = await client.getInboxUnread();
+            try {
+              nextSeen[email] = await checkNewMessages(email, client, settings, seen[email]);
+            } catch {
+              if (seen[email]) nextSeen[email] = seen[email];
+            }
             return { email, unread, status: "ok", checkedAt: Date.now() };
           } catch (error) {
             const reauth = error instanceof AuthRequiredError || error instanceof AuthError;
@@ -537,6 +675,8 @@ function pollAll() {
         })
       );
       await saveAccountStates(Object.fromEntries(results.map((s) => [s.email, s])));
+      for (const { email } of accounts) if (!nextSeen[email] && seen[email]) nextSeen[email] = seen[email];
+      await saveSeen(nextSeen);
       await updateBadge(results);
     })().finally(() => {
       polling = null;
@@ -567,6 +707,18 @@ async function handle(request) {
     case "refresh":
       await pollAll();
       return null;
+    case "testNotification": {
+      const settings = await getSettings();
+      setLanguage(settings.language);
+      chrome.notifications.create(`test|${Date.now()}`, {
+        type: "basic",
+        iconUrl: ICON,
+        title: t("notifTestTitle"),
+        message: t("notifTestMessage"),
+        contextMessage: t("appName")
+      });
+      return null;
+    }
   }
 }
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -593,4 +745,18 @@ chrome.storage.onChanged.addListener((changes, area) => {
   const after = changes.settings.newValue;
   if (before?.pollMinutes !== after?.pollMinutes) void scheduleAlarm();
   if (before?.language !== after?.language) void getAccountStates().then((s) => updateBadge(Object.values(s)));
+});
+chrome.notifications.onClicked.addListener((id) => {
+  const target = parseNotificationId(id);
+  chrome.notifications.clear(id);
+  if (target) void chrome.tabs.create({ url: gmailWebUrl(target.email, target.threadId ?? void 0) });
+});
+chrome.notifications.onButtonClicked.addListener((id, buttonIndex) => {
+  const target = parseNotificationId(id);
+  chrome.notifications.clear(id);
+  if (!target?.threadId) return;
+  const { email, threadId } = target;
+  const client = new GmailClient((forceRefresh) => getToken(email, { forceRefresh }));
+  const action = buttonIndex === 0 ? client.markRead(threadId) : client.archive(threadId);
+  action.then(pollAll, (error) => console.warn("Action depuis la notification impossible", error instanceof Error ? error.name : error));
 });

@@ -3,7 +3,10 @@
 Extension Chrome pour voir et trier ses courriels Gmail d'un clic, à la manière de *Checker Plus for Gmail*.
 
 - **Badge** sur l'icône : nombre de conversations non lues, tous comptes confondus (vérifié chaque minute par défaut).
-- **Plusieurs comptes Gmail**, chacun dans sa section.
+- **Non lus seulement** par défaut ; bascule « Non lus / Tous » en haut de la fenêtre.
+- **Plusieurs comptes Gmail**, chacun dans sa section, **repliable** d'un clic, dans l'**ordre de votre choix** (flèches dans les Réglages).
+- **Notifications** à chaque nouveau courriel : objet, aperçu, compte qui l'a reçu et expéditeur ; boutons « Marquer comme lu » et « Archiver ».
+- Fenêtre de **800 × 600 px**, le maximum permis par Chrome pour une extension.
 - **Lecture** d'une conversation directement dans la fenêtre, images distantes masquées par défaut (protection contre le pistage).
 - **Actions rapides** : archiver, supprimer, signaler comme spam, marquer comme lu ou non lu, ouvrir dans Gmail.
 - Interface en **français** (par défaut) et en **anglais**, thèmes clair et sombre.
@@ -114,7 +117,8 @@ Garder le dossier décompressé au même endroit : Chrome charge l'extension dep
 
 - **Reconnexion** : l'accès se renouvelle seul tant que le compte reste connecté à Google dans Chrome. Si Google le demande (en mode test, cela peut arriver environ chaque semaine), le badge devient orange avec un `!` et la fenêtre affiche **Se reconnecter**.
 - **Supprimer** met la conversation à la corbeille de Gmail (récupérable 30 jours), jamais de suppression définitive.
-- **Mise à jour** : après avoir récupéré une nouvelle version, cliquer sur la flèche de rechargement de l'extension dans `chrome://extensions`.
+- **Mise à jour** : télécharger la nouvelle version, **remplacer le contenu** du dossier `extension` déjà chargé par celui du nouveau, puis cliquer sur la flèche de rechargement de l'extension dans `chrome://extensions`. Les comptes et réglages sont conservés. Ne pas cliquer « Supprimer » sur l'extension : cela efface comptes et réglages.
+- **Notifications** : la première vérification après l'ajout d'un compte ne notifie rien (les courriels déjà présents ne sont pas annoncés). Si rien ne s'affiche, utiliser **Tester la notification** dans les Réglages et autoriser les notifications de Google Chrome dans les réglages du système. La présentation (titre, aperçu, compte) varie un peu selon Windows et macOS.
 - **Retirer un compte** depuis les Réglages révoque aussi l'accès chez Google.
 
 ## Développement

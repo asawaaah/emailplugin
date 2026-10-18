@@ -6,7 +6,8 @@ export type Request =
   | { type: 'getToken'; email: string; interactive?: boolean; forceRefresh?: boolean }
   | { type: 'addAccount' }
   | { type: 'removeAccount'; email: string }
-  | { type: 'refresh' };
+  | { type: 'refresh' }
+  | { type: 'testNotification' };
 
 export type ErrorCode = 'auth_required' | 'no_client_id' | 'canceled' | 'mismatch' | 'failed';
 
