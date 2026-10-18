@@ -11,43 +11,104 @@ Extension Chrome pour voir et trier ses courriels Gmail d'un clic, à la manièr
 
 ## Installation (une seule fois, environ 15 minutes)
 
-### 1. Créer le projet Google Cloud
+### 1. Google Cloud : obtenir l'« ID client »
 
-L'extension a besoin de son propre « identifiant client » Google pour lire Gmail. C'est gratuit.
+L'extension a besoin de son propre identifiant Google pour lire Gmail. C'est gratuit et il n'y a rien à payer ni à faire valider.
+
+#### 1.1 Projet et API Gmail
 
 1. Ouvrir <https://console.cloud.google.com/projectcreate>, nommer le projet `Apercu Gmail`, puis **Créer**.
-2. Activer l'API Gmail : <https://console.cloud.google.com/apis/library/gmail.googleapis.com>, puis **Activer** (vérifier que le projet `Apercu Gmail` est bien sélectionné en haut de la page).
-3. Configurer l'écran de connexion : <https://console.cloud.google.com/auth/overview>, puis **Commencer** :
-   - Nom de l'application : `Aperçu Gmail` ; adresse d'assistance : votre adresse.
-   - Audience : **Externe**.
-   - Coordonnées : votre adresse. Accepter les conditions, puis **Créer**.
-4. Ajouter vos comptes comme testeurs : menu **Audience**, section **Utilisateurs test**, puis **Add users** : ajouter **chaque adresse Gmail** que vous voulez voir dans l'extension. Enregistrer.
-5. Déclarer l'accès à Gmail : menu **Accès aux données** (*Data access*), puis **Ajouter ou supprimer des champs d'application**. Coller `https://www.googleapis.com/auth/gmail.modify` dans « Ajouter manuellement », puis **Ajouter au tableau**, **Mettre à jour** et **Enregistrer**.
-6. Créer l'identifiant client : menu **Clients**, puis **Créer un client** :
-   - Type d'application : **Application Web** (et non « Extension Chrome »).
-   - Nom : `Aperçu Gmail`.
-   - **URI de redirection autorisés**, **Ajouter un URI** :
-     ```
-     https://icpofmgbmnhgejjklblpnnloenedaffp.chromiumapp.org/
-     ```
-   - **Créer**, puis copier l'**ID client** (il se termine par `.apps.googleusercontent.com`).
+2. Activer l'API Gmail : <https://console.cloud.google.com/apis/library/gmail.googleapis.com>, puis **Activer**. Vérifier que le projet `Apercu Gmail` est bien sélectionné en haut de la page.
 
-> L'application reste en mode « test » : c'est normal et suffisant pour un usage personnel. Aucune vérification par Google n'est nécessaire.
+#### 1.2 Assistant « Créer des identifiants »
+
+Après l'activation, Google propose **Créer des identifiants**. Sinon : menu ☰, **API et services**, **Identifiants**, **+ Créer des identifiants**, **Aidez-moi à choisir**.
+
+**Écran « Type d'identifiants »**
+
+- API : **Gmail API**.
+- Données consultées : **Données utilisateur** (*User data*). L'extension lit *vos* courriels, en votre nom, après votre connexion. « Données d'application » sert aux serveurs (compte de service) et ne fonctionne pas avec un compte Gmail personnel.
+- **Suivant**.
+
+**Écran « Écran de consentement OAuth »**
+
+- Nom de l'application : `Aperçu Gmail`.
+- Adresse e-mail d'assistance : votre adresse.
+- Logo : rien.
+- Coordonnées du développeur : votre adresse.
+- **Enregistrer et continuer**.
+
+> Si Google affiche plutôt « Google Auth Platform n'est pas encore configuré », cliquer **Commencer**. Remplir le nom et l'adresse, choisir l'audience **Externe**, remettre votre adresse, accepter les conditions, puis **Créer**. Revenir ensuite à **Identifiants**, **+ Créer des identifiants**, **ID client OAuth**, et passer directement à l'écran « ID client OAuth » ci-dessous. Le champ d'application se déclare alors dans le menu **Accès aux données** (même manipulation que l'écran suivant).
+
+**Écran « Champs d'application »** (*Scopes*)
+
+- **Ajouter ou supprimer des champs d'application**.
+- Tout en bas du panneau, dans **Ajouter manuellement des champs d'application**, coller :
+  ```
+  https://www.googleapis.com/auth/gmail.modify
+  ```
+- **Ajouter au tableau**, puis **Mettre à jour**. La ligne apparaît dans « Vos champs d'application restreints » : c'est normal.
+- **Enregistrer et continuer**.
+
+**Écran « ID client OAuth »**
+
+- Type d'application : **Application Web**, et non « Extension Chrome ». Le type « Extension Chrome » ne gère qu'un seul compte, celui du profil Chrome.
+- Nom : `Aperçu Gmail`.
+- Origines JavaScript autorisées : laisser vide.
+- **URI de redirection autorisés**, **+ Ajouter un URI**, coller exactement (avec `https://` et la barre `/` finale) :
+  ```
+  https://icpofmgbmnhgejjklblpnnloenedaffp.chromiumapp.org/
+  ```
+- **Créer**.
+
+**Écran « Vos identifiants »**
+
+- Copier l'**ID client**, qui se termine par `.apps.googleusercontent.com`, et le garder sous la main.
+- Le code secret et le fichier JSON ne servent pas : ne rien télécharger. **OK**.
+
+#### 1.3 Ajouter vos adresses comme « utilisateurs test » (obligatoire)
+
+Sans cette étape, Google refuse la connexion avec « Erreur 403 : access_denied ».
+
+1. Menu ☰, **API et services**, **Écran de consentement OAuth**. Selon la version de la console, c'est **Google Auth Platform**, menu **Audience**.
+2. Le statut de publication doit être **En test**. Ne pas cliquer « Publier l'application ».
+3. Section **Utilisateurs test**, **+ Add users** : ajouter **chaque adresse Gmail** à afficher dans l'extension, puis **Enregistrer**.
+
+#### Vérification
+
+- [ ] API Gmail activée sur le projet `Apercu Gmail`.
+- [ ] Champ d'application `gmail.modify` déclaré.
+- [ ] ID client de type **Application Web**, avec l'URI de redirection ci-dessus.
+- [ ] Toutes vos adresses Gmail dans **Utilisateurs test**, statut **En test**.
 
 ### 2. Charger l'extension dans Chrome
 
-1. Récupérer ce dépôt : sur GitHub, bouton **Code** puis **Download ZIP**, et décompresser le fichier ; ou `git clone`.
-2. Ouvrir `chrome://extensions`, activer le **Mode développeur** (en haut à droite).
-3. **Charger l'extension non empaquetée** et choisir le dossier **`extension`** du dépôt.
-4. Vérifier que l'identifiant affiché est bien `icpofmgbmnhgejjklblpnnloenedaffp`.
+1. Sur <https://github.com/asawaaah/emailplugin>, choisir la branche `claude/chrome-gmail-plugin-9l08oh` dans le sélecteur de branche (en haut à gauche), puis **Code**, **Download ZIP**. Décompresser le fichier.
+2. Ouvrir `chrome://extensions` (à taper dans la barre d'adresse) et activer le **Mode développeur** (en haut à droite).
+3. **Charger l'extension non empaquetée** et choisir le dossier **`extension`**, à l'intérieur du dossier décompressé (celui qui contient `manifest.json`).
+4. Vérifier que l'identifiant affiché sous « Aperçu Gmail » est bien `icpofmgbmnhgejjklblpnnloenedaffp`.
 5. Épingler l'icône : pièce de casse-tête dans la barre de Chrome, puis épingle à côté d'« Aperçu Gmail ».
+
+Garder le dossier décompressé au même endroit : Chrome charge l'extension depuis ce dossier.
 
 ### 3. Connecter vos comptes
 
 1. La page **Réglages** s'ouvre à l'installation (sinon : clic droit sur l'icône, puis **Options**).
 2. Coller l'ID client, puis **Enregistrer**.
-3. **Ajouter un compte Gmail** : choisir le compte dans la fenêtre Google. Google affiche « Google n'a pas validé cette application » : c'est votre propre application, cliquer **Continuer**, puis autoriser l'accès.
-4. Recommencer pour chaque compte.
+3. **Ajouter un compte Gmail**, puis choisir le compte dans la fenêtre Google.
+4. « Google n'a pas validé cette application » : c'est votre propre application. Cliquer **Continuer**.
+5. Écran des autorisations : si une **case à cocher** apparaît à côté de l'accès à Gmail, **la cocher**, puis **Continuer**.
+6. Le compte apparaît dans la liste. Recommencer pour chaque compte.
+
+### En cas de problème
+
+| Message | Cause | Solution |
+|---|---|---|
+| Erreur 400 : `redirect_uri_mismatch` | URI de redirection différente | Recopier l'URI exacte (avec `https://` et le `/` final) dans l'ID client ; vérifier l'identifiant de l'extension dans `chrome://extensions`. Les changements peuvent prendre quelques minutes chez Google. |
+| Erreur 403 : `access_denied` | Adresse absente des utilisateurs test | Étape 1.3. |
+| Erreur 401 : `invalid_client` | ID client mal collé | Recoller l'ID client complet dans les Réglages. |
+| « La connexion a échoué : Gmail API 403 » | Case Gmail non cochée, ou API Gmail non activée | Réactiver l'API (étape 1.1), retirer le compte, puis le rajouter en cochant la case. |
+| « Configuration requise » dans la fenêtre | ID client pas encore enregistré | Réglages, coller l'ID client, **Enregistrer**. |
 
 ## Bon à savoir
 
