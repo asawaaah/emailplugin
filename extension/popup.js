@@ -1,0 +1,899 @@
+// src/lib/dom.ts
+function h(tag, attrs = {}, ...children) {
+  const el = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs)) {
+    if (value === void 0 || value === false) continue;
+    if (key.startsWith("on") && typeof value === "function") {
+      el.addEventListener(key.slice(2).toLowerCase(), value);
+    } else if (key === "class") {
+      el.className = String(value);
+    } else if (value === true) {
+      el.setAttribute(key, "");
+    } else {
+      el.setAttribute(key, String(value));
+    }
+  }
+  for (const child of children) {
+    if (child === null || child === void 0 || child === false) continue;
+    el.append(typeof child === "string" ? document.createTextNode(child) : child);
+  }
+  return el;
+}
+var PATHS = {
+  back: "M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z",
+  refresh: "M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z",
+  add: "M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z",
+  settings: "M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z",
+  archive: "M20.54 5.23l-1.39-1.68C18.88 3.21 18.47 3 18 3H6c-.47 0-.88.21-1.16.55L3.46 5.23C3.17 5.57 3 6.02 3 6.5V19c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6.5c0-.48-.17-.93-.46-1.27zM12 17.5L6.5 12H10v-2h4v2h3.5L12 17.5zM5.12 5l.81-1h12l.94 1H5.12z",
+  delete: "M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z",
+  markUnread: "M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z",
+  markRead: "M21.99 8c0-.72-.37-1.35-.94-1.7L12 1 2.95 6.3C2.38 6.65 2 7.28 2 8v10c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2l-.01-10zM12 13L3.74 7.84 12 3l8.26 4.84L12 13z",
+  openInNew: "M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z",
+  spam: "M15.73 3H8.27L3 8.27v7.46L8.27 21h7.46L21 15.73V8.27L15.73 3zM12 17.3c-.72 0-1.3-.58-1.3-1.3 0-.72.58-1.3 1.3-1.3.72 0 1.3.58 1.3 1.3 0 .72-.58 1.3-1.3 1.3zm1-4.3h-2V7h2v6z",
+  expandMore: "M16.59 8.59L12 13.17 7.41 8.59 6 10l6 6 6-6z",
+  attach: "M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5a2.5 2.5 0 0 1 5 0v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5a2.5 2.5 0 0 0 5 0V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z",
+  image: "M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z",
+  warning: "M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z",
+  close: "M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z",
+  mail: "M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4V8l8 5 8-5v10zm-8-7L4 6h16l-8 5z"
+};
+var SVG_NS = "http://www.w3.org/2000/svg";
+function icon(name, size = 20) {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("width", String(size));
+  svg.setAttribute("height", String(size));
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("class", "icon");
+  const path = document.createElementNS(SVG_NS, "path");
+  path.setAttribute("d", PATHS[name]);
+  path.setAttribute("fill", "currentColor");
+  svg.append(path);
+  return svg;
+}
+function iconButton(name, label, onClick, extraClass = "") {
+  const button = h("button", { type: "button", class: `icon-button ${extraClass}`.trim(), title: label, "aria-label": label }, icon(name));
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    onClick(event);
+  });
+  return button;
+}
+function avatarHue(seed) {
+  let hash = 0;
+  for (const char of seed) hash = hash * 31 + char.charCodeAt(0) >>> 0;
+  return hash % 360;
+}
+function avatar(name, seed) {
+  const letter = (name.trim()[0] ?? "?").toUpperCase();
+  const el = h("span", { class: "avatar", "aria-hidden": "true" }, letter);
+  el.style.setProperty("--hue", String(avatarHue(seed)));
+  return el;
+}
+
+// src/lib/mime.ts
+function header(headers, name) {
+  const lower = name.toLowerCase();
+  return headers?.find((h2) => h2.name.toLowerCase() === lower)?.value ?? "";
+}
+function parsePerson(raw) {
+  const value = raw.trim();
+  const match = value.match(/^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/);
+  if (match) {
+    const email = (match[2] ?? "").trim();
+    const name = (match[1] ?? "").trim();
+    return { name: name || email, email };
+  }
+  return { name: value, email: value };
+}
+function decodeBase64Url(data) {
+  const base64 = data.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = base64 + "=".repeat((4 - base64.length % 4) % 4);
+  const binary = atob(padded);
+  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+  return new TextDecoder("utf-8").decode(bytes);
+}
+function extractBody(payload) {
+  const result = { html: null, text: null, attachments: [] };
+  if (!payload) return result;
+  const visit = (part) => {
+    const mime = (part.mimeType ?? "").toLowerCase();
+    const disposition = header(part.headers, "Content-Disposition").toLowerCase();
+    const isAttachment = Boolean(part.filename) && (disposition.startsWith("attachment") || Boolean(part.body?.attachmentId));
+    if (isAttachment) {
+      result.attachments.push({
+        filename: part.filename ?? "",
+        mimeType: part.mimeType ?? "",
+        size: part.body?.size ?? 0
+      });
+      return;
+    }
+    if (part.parts?.length) {
+      part.parts.forEach(visit);
+      return;
+    }
+    const data = part.body?.data;
+    if (!data) return;
+    if (mime === "text/html" && result.html === null) result.html = decodeBase64Url(data);
+    else if (mime === "text/plain" && result.text === null) result.text = decodeBase64Url(data);
+  };
+  visit(payload);
+  return result;
+}
+var HTML_ESCAPES = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#39;"
+};
+function escapeHtml(value) {
+  return value.replace(/[&<>"']/g, (c) => HTML_ESCAPES[c] ?? c);
+}
+function textToHtml(text) {
+  const escaped = escapeHtml(text);
+  const linked = escaped.replace(/\bhttps?:\/\/[^\s<]+[^\s<.,;:!?)\]'"]/g, (url) => `<a href="${url}">${url}</a>`);
+  return `<div style="white-space:pre-wrap;font-family:inherit">${linked}</div>`;
+}
+function hasRemoteContent(html) {
+  return /<img[^>]+src\s*=\s*["']?\s*(https?:)?\/\//i.test(html) || /url\(\s*["']?\s*(https?:)?\/\//i.test(html) || /\bbackground\s*=\s*["']?\s*(https?:)?\/\//i.test(html) || /<link[^>]+href\s*=\s*["']?\s*(https?:)?\/\//i.test(html);
+}
+function buildEmailDocument(body, options) {
+  const remote = options.showRemote ? " https: http:" : "";
+  const csp = [
+    "default-src 'none'",
+    `img-src data: cid:${remote}`,
+    `style-src 'unsafe-inline'${remote}`,
+    `font-src data:${remote}`
+  ].join("; ");
+  const cleaned = body.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<meta[^>]+http-equiv[^>]*>/gi, "").replace(/<base[^>]*>/gi, "");
+  return `<!doctype html><html><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="${csp}">
+<base target="_blank">
+<style>
+  html, body { margin: 0; padding: 0; background: #fff; color: #202124; }
+  body { padding: 8px 10px; font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow-wrap: anywhere; }
+  img { max-width: 100%; height: auto; }
+  pre { white-space: pre-wrap; }
+  blockquote { margin: 0 0 0 8px; padding-left: 8px; border-left: 2px solid #dadce0; color: #5f6368; }
+</style></head><body>${cleaned}</body></html>`;
+}
+
+// src/lib/gmail.ts
+var API = "https://gmail.googleapis.com/gmail/v1/users/me";
+var AuthRequiredError = class extends Error {
+  constructor(message = "auth_required") {
+    super(message);
+    this.name = "AuthRequiredError";
+  }
+};
+var GmailApiError = class extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+    this.name = "GmailApiError";
+  }
+  status;
+};
+async function mapLimit(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await fn(items[index]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+function gmailWebUrl(email, threadId) {
+  const base = `https://mail.google.com/mail/?authuser=${encodeURIComponent(email)}`;
+  return threadId ? `${base}#inbox/${threadId}` : base;
+}
+function toSummary(thread) {
+  const messages = thread.messages ?? [];
+  const first = messages[0];
+  const last = messages[messages.length - 1];
+  return {
+    id: thread.id,
+    from: parsePerson(header(last?.payload?.headers, "From")),
+    subject: header(first?.payload?.headers, "Subject"),
+    snippet: decodeEntities(last?.snippet ?? thread.snippet ?? ""),
+    date: Number(last?.internalDate ?? 0),
+    unread: messages.some((m) => m.labelIds?.includes("UNREAD")),
+    messageCount: messages.length
+  };
+}
+function toMessageDetail(message) {
+  const headers = message.payload?.headers;
+  const body = extractBody(message.payload);
+  return {
+    id: message.id,
+    from: parsePerson(header(headers, "From")),
+    to: header(headers, "To"),
+    date: Number(message.internalDate ?? 0),
+    snippet: decodeEntities(message.snippet ?? ""),
+    unread: Boolean(message.labelIds?.includes("UNREAD")),
+    html: body.html,
+    text: body.text,
+    attachments: body.attachments
+  };
+}
+function decodeEntities(value) {
+  const named = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
+  return value.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (match, code) => {
+    if (code[0] === "#") {
+      const n = code[1]?.toLowerCase() === "x" ? parseInt(code.slice(2), 16) : parseInt(code.slice(1), 10);
+      return Number.isFinite(n) ? String.fromCodePoint(n) : match;
+    }
+    return named[code.toLowerCase()] ?? match;
+  });
+}
+var GmailClient = class {
+  constructor(getToken) {
+    this.getToken = getToken;
+  }
+  getToken;
+  async request(path, init2 = {}) {
+    const send2 = async (forceRefresh) => {
+      const token = await this.getToken(forceRefresh);
+      return fetch(`${API}${path}`, {
+        ...init2,
+        headers: { ...init2.headers ?? {}, Authorization: `Bearer ${token}`, "Content-Type": "application/json" }
+      });
+    };
+    let response = await send2(false);
+    if (response.status === 401) response = await send2(true);
+    if (response.status === 401) throw new AuthRequiredError();
+    if (!response.ok) throw new GmailApiError(response.status, `Gmail API ${response.status}`);
+    if (response.status === 204) return void 0;
+    return await response.json();
+  }
+  async getProfileEmail() {
+    const profile = await this.request("/profile");
+    return profile.emailAddress;
+  }
+  /** Nombre de conversations non lues dans la boîte de réception. */
+  async getInboxUnread() {
+    const label = await this.request("/labels/INBOX");
+    return label.threadsUnread ?? 0;
+  }
+  async listInboxThreads(max) {
+    const list = await this.request(
+      `/threads?labelIds=INBOX&maxResults=${max}`
+    );
+    const ids = (list.threads ?? []).map((t2) => t2.id);
+    const query = "format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date";
+    const threads = await mapLimit(ids, 5, (id) => this.request(`/threads/${id}?${query}`));
+    return threads.map(toSummary);
+  }
+  async getThread(id) {
+    const thread = await this.request(`/threads/${id}?format=full`);
+    const messages = (thread.messages ?? []).map(toMessageDetail);
+    const firstHeaders = thread.messages?.[0]?.payload?.headers;
+    return { id: thread.id, subject: header(firstHeaders, "Subject"), messages };
+  }
+  async modifyThread(id, addLabelIds, removeLabelIds) {
+    await this.request(`/threads/${id}/modify`, {
+      method: "POST",
+      body: JSON.stringify({ addLabelIds, removeLabelIds })
+    });
+  }
+  markRead(id) {
+    return this.modifyThread(id, [], ["UNREAD"]);
+  }
+  markUnread(id) {
+    return this.modifyThread(id, ["UNREAD"], []);
+  }
+  archive(id) {
+    return this.modifyThread(id, [], ["INBOX"]);
+  }
+  spam(id) {
+    return this.modifyThread(id, ["SPAM"], ["INBOX"]);
+  }
+  async trash(id) {
+    await this.request(`/threads/${id}/trash`, { method: "POST" });
+  }
+};
+
+// src/lib/i18n.ts
+var fr = {
+  appName: "Aper\xE7u Gmail",
+  refresh: "Actualiser",
+  addAccount: "Ajouter un compte Gmail",
+  settings: "R\xE9glages",
+  back: "Retour",
+  openGmail: "Ouvrir dans Gmail",
+  archive: "Archiver",
+  delete: "Supprimer",
+  spam: "Signaler comme spam",
+  markRead: "Marquer comme lu",
+  markUnread: "Marquer comme non lu",
+  noSubject: "(sans objet)",
+  inboxEmpty: "Bo\xEEte de r\xE9ception vide. Bravo !",
+  loading: "Chargement\u2026",
+  unreadCount: "{0} non lus",
+  oneUnread: "1 non lu",
+  noUnread: "Aucun non lu",
+  reauthNeeded: "Reconnexion requise",
+  reconnect: "Se reconnecter",
+  loadError: "Impossible de charger les courriels.",
+  retry: "R\xE9essayer",
+  actionError: "L\u2019action a \xE9chou\xE9. R\xE9essayez.",
+  welcomeTitle: "Bienvenue !",
+  welcomeText: "Ajoutez un compte Gmail pour voir vos courriels ici.",
+  setupTitle: "Configuration requise",
+  setupText: "Collez l\u2019identifiant client Google dans les r\xE9glages pour commencer.",
+  openSettings: "Ouvrir les r\xE9glages",
+  addAccountHint: "Une fen\xEAtre Google va s\u2019ouvrir. Rouvrez ensuite l\u2019extension.",
+  imagesHidden: "Images masqu\xE9es pour prot\xE9ger votre vie priv\xE9e.",
+  showImages: "Afficher les images",
+  attachments: "Pi\xE8ces jointes",
+  messagesInThread: "{0} messages",
+  toLabel: "\xC0 : {0}",
+  archived: "Conversation archiv\xE9e",
+  deleted: "Conversation supprim\xE9e",
+  spammed: "Signal\xE9e comme spam",
+  // Page d'options
+  optionsTitle: "R\xE9glages \u2014 Aper\xE7u Gmail",
+  googleSection: "Connexion Google",
+  googleHelp: "Collez l\u2019identifiant client OAuth de votre projet Google Cloud (type \xAB Application Web \xBB). Le guide pas \xE0 pas est dans le fichier README du projet.",
+  clientIdLabel: "Identifiant client",
+  redirectLabel: "URI de redirection autoris\xE9e \xE0 d\xE9clarer dans Google Cloud",
+  extensionIdLabel: "Identifiant de l\u2019extension",
+  copy: "Copier",
+  copied: "Copi\xE9",
+  save: "Enregistrer",
+  saved: "Enregistr\xE9",
+  accountsSection: "Comptes",
+  noAccounts: "Aucun compte pour l\u2019instant.",
+  remove: "Retirer",
+  removeConfirm: "Retirer le compte {0} de l\u2019extension ?",
+  addingAccount: "Connexion en cours\u2026",
+  accountAdded: "Compte {0} ajout\xE9.",
+  accountExists: "Ce compte est d\xE9j\xE0 ajout\xE9.",
+  clientIdMissing: "Enregistrez d\u2019abord l\u2019identifiant client.",
+  authCanceled: "Connexion annul\xE9e.",
+  authFailed: "La connexion a \xE9chou\xE9 : {0}",
+  prefsSection: "Pr\xE9f\xE9rences",
+  languageLabel: "Langue",
+  pollLabel: "V\xE9rifier les nouveaux courriels toutes les",
+  minutes: "{0} min",
+  maxThreadsLabel: "Conversations affich\xE9es par compte",
+  markReadLabel: "Marquer comme lu \xE0 l\u2019ouverture",
+  showImagesLabel: "Toujours afficher les images (peut permettre le pistage)",
+  privacyNote: "Vos courriels ne quittent jamais votre navigateur : l\u2019extension parle directement \xE0 Google, sans serveur interm\xE9diaire."
+};
+var en = {
+  appName: "Gmail Preview",
+  refresh: "Refresh",
+  addAccount: "Add a Gmail account",
+  settings: "Settings",
+  back: "Back",
+  openGmail: "Open in Gmail",
+  archive: "Archive",
+  delete: "Delete",
+  spam: "Report spam",
+  markRead: "Mark as read",
+  markUnread: "Mark as unread",
+  noSubject: "(no subject)",
+  inboxEmpty: "Inbox empty. Well done!",
+  loading: "Loading\u2026",
+  unreadCount: "{0} unread",
+  oneUnread: "1 unread",
+  noUnread: "No unread",
+  reauthNeeded: "Sign-in required",
+  reconnect: "Sign in again",
+  loadError: "Could not load messages.",
+  retry: "Retry",
+  actionError: "The action failed. Please try again.",
+  welcomeTitle: "Welcome!",
+  welcomeText: "Add a Gmail account to see your messages here.",
+  setupTitle: "Setup required",
+  setupText: "Paste your Google client ID in the settings to get started.",
+  openSettings: "Open settings",
+  addAccountHint: "A Google window will open. Then reopen the extension.",
+  imagesHidden: "Images hidden to protect your privacy.",
+  showImages: "Show images",
+  attachments: "Attachments",
+  messagesInThread: "{0} messages",
+  toLabel: "To: {0}",
+  archived: "Conversation archived",
+  deleted: "Conversation deleted",
+  spammed: "Reported as spam",
+  optionsTitle: "Settings \u2014 Gmail Preview",
+  googleSection: "Google sign-in",
+  googleHelp: "Paste the OAuth client ID of your Google Cloud project (type \u201CWeb application\u201D). The step-by-step guide is in the project README.",
+  clientIdLabel: "Client ID",
+  redirectLabel: "Authorized redirect URI to declare in Google Cloud",
+  extensionIdLabel: "Extension ID",
+  copy: "Copy",
+  copied: "Copied",
+  save: "Save",
+  saved: "Saved",
+  accountsSection: "Accounts",
+  noAccounts: "No accounts yet.",
+  remove: "Remove",
+  removeConfirm: "Remove the account {0} from the extension?",
+  addingAccount: "Signing in\u2026",
+  accountAdded: "Account {0} added.",
+  accountExists: "This account is already added.",
+  clientIdMissing: "Save the client ID first.",
+  authCanceled: "Sign-in canceled.",
+  authFailed: "Sign-in failed: {0}",
+  prefsSection: "Preferences",
+  languageLabel: "Language",
+  pollLabel: "Check for new messages every",
+  minutes: "{0} min",
+  maxThreadsLabel: "Conversations shown per account",
+  markReadLabel: "Mark as read when opened",
+  showImagesLabel: "Always show images (may allow tracking)",
+  privacyNote: "Your messages never leave your browser: the extension talks directly to Google, with no server in between."
+};
+var dictionaries = { fr, en };
+var current = "fr";
+function setLanguage(language) {
+  current = language;
+  if (typeof document !== "undefined") document.documentElement.lang = language;
+}
+function t(key, ...subs) {
+  const template = dictionaries[current][key] ?? fr[key];
+  return subs.reduce((text, sub, i) => text.replaceAll(`{${i}}`, String(sub)), template);
+}
+function unreadLabel(count) {
+  if (count === 0) return t("noUnread");
+  if (count === 1) return t("oneUnread");
+  return t("unreadCount", count);
+}
+var locales = { fr: "fr-CA", en: "en-CA" };
+function formatShortDate(timestamp, now = Date.now()) {
+  const date = new Date(timestamp);
+  const today = new Date(now);
+  const locale = locales[current];
+  if (date.toDateString() === today.toDateString()) {
+    return new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit" }).format(date);
+  }
+  if (date.getFullYear() === today.getFullYear()) {
+    return new Intl.DateTimeFormat(locale, { day: "numeric", month: "short" }).format(date);
+  }
+  return new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", year: "numeric" }).format(date);
+}
+function formatLongDate(timestamp) {
+  return new Intl.DateTimeFormat(locales[current], { dateStyle: "medium", timeStyle: "short" }).format(new Date(timestamp));
+}
+
+// src/lib/messages.ts
+var RemoteError = class extends Error {
+  constructor(code, message) {
+    super(message);
+    this.code = code;
+    this.name = "RemoteError";
+  }
+  code;
+};
+async function send(request) {
+  const response = await chrome.runtime.sendMessage(request);
+  if (!response) throw new RemoteError("failed", "no_response");
+  if (!response.ok) throw new RemoteError(response.code, response.message);
+  return response.data;
+}
+
+// src/lib/storage.ts
+var DEFAULT_SETTINGS = {
+  clientId: "",
+  language: "fr",
+  pollMinutes: 1,
+  maxThreads: 20,
+  markReadOnOpen: true,
+  alwaysShowImages: false
+};
+async function getSettings() {
+  const { settings: settings2 } = await chrome.storage.local.get("settings");
+  return { ...DEFAULT_SETTINGS, ...settings2 };
+}
+async function getAccounts() {
+  const { accounts } = await chrome.storage.local.get("accounts");
+  return accounts ?? [];
+}
+async function getAccountStates() {
+  const { accountStates } = await chrome.storage.local.get("accountStates");
+  return accountStates ?? {};
+}
+
+// src/popup/popup.ts
+var settings;
+var sections = /* @__PURE__ */ new Map();
+var clients = /* @__PURE__ */ new Map();
+var app = document.getElementById("app");
+var listView = h("main", { class: "list-view" });
+var detailView = h("main", { class: "detail-view", hidden: true });
+var toastEl = h("div", { class: "toast", role: "status", "aria-live": "polite", hidden: true });
+function clientFor(email) {
+  let client = clients.get(email);
+  if (!client) {
+    client = new GmailClient((forceRefresh) => send({ type: "getToken", email, forceRefresh }));
+    clients.set(email, client);
+  }
+  return client;
+}
+function isAuthError(error) {
+  return error instanceof RemoteError && (error.code === "auth_required" || error.code === "mismatch") || error instanceof Error && error.name === "AuthRequiredError";
+}
+var toastTimer;
+function toast(message) {
+  toastEl.textContent = message;
+  toastEl.hidden = false;
+  window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => {
+    toastEl.hidden = true;
+  }, 3e3);
+}
+function openTab(url) {
+  void chrome.tabs.create({ url });
+  window.close();
+}
+function refreshBadge() {
+  send({ type: "refresh" }).catch(() => void 0);
+}
+function renderHeader() {
+  return h(
+    "header",
+    { class: "app-header" },
+    h("span", { class: "app-logo" }, icon("mail", 22)),
+    h("h1", { class: "app-title" }, t("appName")),
+    iconButton("refresh", t("refresh"), () => void loadAll()),
+    iconButton("add", t("addAccount"), () => void addAccount()),
+    iconButton("settings", t("settings"), () => {
+      void chrome.runtime.openOptionsPage();
+      window.close();
+    })
+  );
+}
+async function addAccount() {
+  if (!settings.clientId) {
+    void chrome.runtime.openOptionsPage();
+    window.close();
+    return;
+  }
+  toast(t("addAccountHint"));
+  try {
+    await send({ type: "addAccount" });
+    await init();
+  } catch (error) {
+    if (error instanceof RemoteError && error.code !== "canceled") toast(t("authFailed", error.message));
+  }
+}
+function emptyState(title, text, actionLabel, action) {
+  return h(
+    "div",
+    { class: "empty-state" },
+    h("span", { class: "empty-icon" }, icon("mail", 40)),
+    h("h2", {}, title),
+    h("p", {}, text),
+    h("button", { type: "button", class: "filled-button", onclick: action }, actionLabel)
+  );
+}
+function renderSection(section) {
+  const unreadText = section.unread === null ? "" : unreadLabel(section.unread);
+  const header2 = h(
+    "div",
+    { class: "section-header" },
+    avatar(section.email, section.email),
+    h(
+      "div",
+      { class: "section-title" },
+      h("span", { class: "section-email" }, section.email),
+      h("span", { class: `section-unread ${section.unread ? "has-unread" : ""}` }, unreadText)
+    ),
+    iconButton("openInNew", t("openGmail"), () => openTab(gmailWebUrl(section.email)))
+  );
+  let body;
+  switch (section.status) {
+    case "loading":
+      body = h("div", { class: "skeletons", "aria-label": t("loading") }, ...Array.from({ length: 3 }, () => h("div", { class: "skeleton" })));
+      break;
+    case "reauth":
+      body = h(
+        "div",
+        { class: "section-message warning" },
+        icon("warning"),
+        h("span", {}, t("reauthNeeded")),
+        h("button", { type: "button", class: "text-button", onclick: (() => void reconnect(section.email)) }, t("reconnect"))
+      );
+      break;
+    case "error":
+      body = h(
+        "div",
+        { class: "section-message" },
+        h("span", {}, t("loadError")),
+        h("button", { type: "button", class: "text-button", onclick: (() => void loadAccount(section.email)) }, t("retry"))
+      );
+      break;
+    case "ok":
+      body = section.threads.length ? h("ul", { class: "thread-list" }, ...section.threads.map((thread) => renderThreadRow(section, thread))) : h("p", { class: "section-message muted" }, t("inboxEmpty"));
+      break;
+  }
+  section.el.replaceChildren(header2, body);
+}
+function renderThreadRow(section, thread) {
+  const open = () => void openThread(section, thread);
+  const count = thread.messageCount > 1 ? h("span", { class: "thread-count" }, String(thread.messageCount)) : null;
+  const row = h(
+    "li",
+    {
+      class: `thread ${thread.unread ? "unread" : ""}`,
+      tabindex: 0,
+      role: "button",
+      "aria-label": `${thread.from.name} \u2014 ${thread.subject || t("noSubject")}`
+    },
+    h(
+      "div",
+      { class: "thread-main" },
+      h(
+        "div",
+        { class: "thread-top" },
+        h("span", { class: "thread-from" }, h("span", { class: "thread-name" }, thread.from.name), count),
+        h("span", { class: "thread-date" }, formatShortDate(thread.date))
+      ),
+      h("div", { class: "thread-subject" }, thread.subject || t("noSubject")),
+      h("div", { class: "thread-snippet" }, thread.snippet)
+    ),
+    h(
+      "div",
+      { class: "thread-actions" },
+      iconButton("archive", t("archive"), () => void runAction(section, thread, "archive")),
+      iconButton("delete", t("delete"), () => void runAction(section, thread, "trash")),
+      thread.unread ? iconButton("markRead", t("markRead"), () => void runAction(section, thread, "markRead")) : iconButton("markUnread", t("markUnread"), () => void runAction(section, thread, "markUnread"))
+    )
+  );
+  row.addEventListener("click", open);
+  row.addEventListener("keydown", (event) => {
+    if (event.target === row && (event.key === "Enter" || event.key === " ")) {
+      event.preventDefault();
+      open();
+    }
+  });
+  return row;
+}
+async function loadAccount(email) {
+  const section = sections.get(email);
+  if (!section) return;
+  section.status = "loading";
+  renderSection(section);
+  const client = clientFor(email);
+  try {
+    const [threads, unread] = await Promise.all([client.listInboxThreads(settings.maxThreads), client.getInboxUnread()]);
+    section.threads = threads;
+    section.unread = unread;
+    section.status = "ok";
+  } catch (error) {
+    section.status = isAuthError(error) ? "reauth" : "error";
+  }
+  renderSection(section);
+}
+async function reconnect(email) {
+  toast(t("addAccountHint"));
+  try {
+    await send({ type: "getToken", email, interactive: true });
+    await loadAccount(email);
+    refreshBadge();
+  } catch (error) {
+    if (error instanceof RemoteError && error.code !== "canceled") toast(t("authFailed", error.message));
+  }
+}
+async function loadAll() {
+  await Promise.all([...sections.keys()].map(loadAccount));
+  refreshBadge();
+}
+function applyLocally(section, thread, action) {
+  const index = section.threads.indexOf(thread);
+  const wasUnread = thread.unread;
+  const unreadBefore = section.unread;
+  if (action === "markRead" || action === "markUnread") {
+    thread.unread = action === "markUnread";
+  } else if (index >= 0) {
+    section.threads.splice(index, 1);
+  }
+  let delta = 0;
+  if (action === "markUnread") delta = wasUnread ? 0 : 1;
+  else if (wasUnread) delta = -1;
+  if (section.unread !== null) section.unread = Math.max(0, section.unread + delta);
+  renderSection(section);
+  return () => {
+    thread.unread = wasUnread;
+    section.unread = unreadBefore;
+    if (action !== "markRead" && action !== "markUnread" && index >= 0) section.threads.splice(index, 0, thread);
+    renderSection(section);
+  };
+}
+async function runAction(section, thread, action) {
+  const undo = applyLocally(section, thread, action);
+  try {
+    await clientFor(section.email)[action](thread.id);
+    if (action === "archive") toast(t("archived"));
+    else if (action === "trash") toast(t("deleted"));
+    else if (action === "spam") toast(t("spammed"));
+    refreshBadge();
+    return true;
+  } catch (error) {
+    undo();
+    if (isAuthError(error)) {
+      section.status = "reauth";
+      renderSection(section);
+    }
+    toast(t("actionError"));
+    return false;
+  }
+}
+function showList() {
+  detailView.hidden = true;
+  detailView.replaceChildren();
+  listView.hidden = false;
+}
+function fitFrame(frame) {
+  const doc = frame.contentDocument;
+  if (!doc?.documentElement) return;
+  const root = doc.documentElement;
+  root.style.zoom = "1";
+  const available = frame.clientWidth;
+  const contentWidth = root.scrollWidth;
+  const zoom = contentWidth > available + 1 ? available / contentWidth : 1;
+  root.style.zoom = String(zoom);
+  frame.style.height = `${Math.ceil(root.getBoundingClientRect().height) + 4}px`;
+}
+function renderBody(message) {
+  const container = h("div", { class: "message-body" });
+  const source = message.html ?? (message.text ? textToHtml(message.text) : "");
+  const remote = hasRemoteContent(source);
+  const draw = (showRemote) => {
+    const frame = h("iframe", {
+      class: "message-frame",
+      // Pas de allow-scripts : aucun script du courriel ne s'exécute.
+      sandbox: "allow-same-origin allow-popups allow-popups-to-escape-sandbox",
+      title: message.from.name
+    });
+    frame.srcdoc = buildEmailDocument(source, { showRemote });
+    frame.addEventListener("load", () => {
+      fitFrame(frame);
+      const doc = frame.contentDocument;
+      if (doc?.body) new ResizeObserver(() => fitFrame(frame)).observe(doc.body);
+    });
+    const banner = remote && !showRemote ? h(
+      "div",
+      { class: "images-banner" },
+      icon("image", 18),
+      h("span", {}, t("imagesHidden")),
+      h("button", { type: "button", class: "text-button", onclick: (() => draw(true)) }, t("showImages"))
+    ) : null;
+    container.replaceChildren(...banner ? [banner, frame] : [frame]);
+  };
+  draw(settings.alwaysShowImages);
+  return container;
+}
+function renderMessage(message, expanded) {
+  const article = h("article", { class: `message ${expanded ? "expanded" : "collapsed"}` });
+  const headerEl = h(
+    "button",
+    { type: "button", class: "message-header", "aria-expanded": String(expanded) },
+    avatar(message.from.name, message.from.email),
+    h(
+      "span",
+      { class: "message-meta" },
+      h("span", { class: "message-from" }, message.from.name, message.from.email !== message.from.name ? h("span", { class: "message-email" }, ` <${message.from.email}>`) : null),
+      h("span", { class: "message-sub" }, expanded ? t("toLabel", message.to) : message.snippet)
+    ),
+    h("span", { class: "message-date" }, expanded ? formatLongDate(message.date) : formatShortDate(message.date))
+  );
+  const fill = (isExpanded) => {
+    article.className = `message ${isExpanded ? "expanded" : "collapsed"}`;
+    headerEl.setAttribute("aria-expanded", String(isExpanded));
+    const sub = headerEl.querySelector(".message-sub");
+    if (sub) sub.textContent = isExpanded ? t("toLabel", message.to) : message.snippet;
+    const date = headerEl.querySelector(".message-date");
+    if (date) date.textContent = isExpanded ? formatLongDate(message.date) : formatShortDate(message.date);
+    article.replaceChildren(headerEl);
+    if (isExpanded) {
+      article.append(renderBody(message));
+      if (message.attachments.length) {
+        article.append(
+          h(
+            "div",
+            { class: "attachments" },
+            h("span", { class: "attachments-title" }, icon("attach", 16), t("attachments")),
+            h("ul", {}, ...message.attachments.map((a) => h("li", {}, a.filename)))
+          )
+        );
+      }
+    }
+  };
+  headerEl.addEventListener("click", () => fill(!article.classList.contains("expanded")));
+  fill(expanded);
+  return article;
+}
+async function openThread(section, thread) {
+  const client = clientFor(section.email);
+  const leave = async (action) => {
+    showList();
+    await runAction(section, thread, action);
+  };
+  const toolbar = h(
+    "div",
+    { class: "detail-toolbar" },
+    iconButton("back", t("back"), showList),
+    h("span", { class: "spacer" }),
+    iconButton("archive", t("archive"), () => void leave("archive")),
+    iconButton("delete", t("delete"), () => void leave("trash")),
+    iconButton("spam", t("spam"), () => void leave("spam")),
+    iconButton("markUnread", t("markUnread"), () => void leave("markUnread")),
+    iconButton("openInNew", t("openGmail"), () => openTab(gmailWebUrl(section.email, thread.id)))
+  );
+  const content = h("div", { class: "detail-content" }, h("div", { class: "skeletons" }, h("div", { class: "skeleton" }), h("div", { class: "skeleton tall" })));
+  detailView.replaceChildren(toolbar, content);
+  listView.hidden = true;
+  detailView.hidden = false;
+  detailView.scrollTop = 0;
+  try {
+    const detail = await client.getThread(thread.id);
+    const lastIndex = detail.messages.length - 1;
+    content.replaceChildren(
+      h("h2", { class: "detail-subject" }, detail.subject || t("noSubject")),
+      h("p", { class: "detail-account" }, section.email),
+      ...detail.messages.map((m, i) => renderMessage(m, i === lastIndex || m.unread))
+    );
+    if (thread.unread && settings.markReadOnOpen) {
+      applyLocally(section, thread, "markRead");
+      client.markRead(thread.id).then(refreshBadge, () => void 0);
+    }
+  } catch (error) {
+    content.replaceChildren(
+      h(
+        "div",
+        { class: "section-message" },
+        h("span", {}, t("loadError")),
+        h("button", { type: "button", class: "text-button", onclick: (() => void openThread(section, thread)) }, t("retry"))
+      )
+    );
+    if (isAuthError(error)) {
+      section.status = "reauth";
+      renderSection(section);
+    }
+  }
+}
+async function init() {
+  settings = await getSettings();
+  setLanguage(settings.language);
+  document.title = t("appName");
+  const accounts = await getAccounts();
+  const states = await getAccountStates();
+  sections.clear();
+  listView.replaceChildren();
+  showList();
+  app.replaceChildren(renderHeader(), listView, detailView, toastEl);
+  if (!settings.clientId) {
+    listView.append(emptyState(t("setupTitle"), t("setupText"), t("openSettings"), () => {
+      void chrome.runtime.openOptionsPage();
+      window.close();
+    }));
+    return;
+  }
+  if (!accounts.length) {
+    listView.append(emptyState(t("welcomeTitle"), t("welcomeText"), t("addAccount"), () => void addAccount()));
+    return;
+  }
+  for (const { email } of accounts) {
+    const el = h("section", { class: "account-section", "aria-label": email });
+    const section = { email, status: "loading", threads: [], unread: states[email]?.unread ?? null, el };
+    sections.set(email, section);
+    listView.append(el);
+    renderSection(section);
+  }
+  await loadAll();
+}
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !detailView.hidden) {
+    event.preventDefault();
+    showList();
+  }
+});
+void init();

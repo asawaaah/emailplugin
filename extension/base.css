@@ -1,0 +1,104 @@
+/* Jetons partagés : couleurs inspirées de Gmail, thèmes clair et sombre. */
+:root {
+  --bg: #ffffff;
+  --surface: #f6f8fc;
+  --surface-hover: #eef2f9;
+  --surface-strong: #e9eef6;
+  --text: #1f1f1f;
+  --text-muted: #5e5e5e;
+  --outline: #c4c7c5;
+  --outline-soft: #e3e3e3;
+  --primary: #0b57d0;
+  --on-primary: #ffffff;
+  --primary-soft: #d3e3fd;
+  --warning-bg: #fef7e0;
+  --warning-text: #7a4f01;
+  --unread-dot: #0b57d0;
+  --radius: 12px;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Google Sans", sans-serif;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1f1f1f;
+    --surface: #282a2c;
+    --surface-hover: #333537;
+    --surface-strong: #37393b;
+    --text: #e3e3e3;
+    --text-muted: #a8abaf;
+    --outline: #5f6368;
+    --outline-soft: #3c4043;
+    --primary: #a8c7fa;
+    --on-primary: #062e6f;
+    --primary-soft: #0842a0;
+    --warning-bg: #3d2e00;
+    --warning-text: #fdd663;
+    --unread-dot: #a8c7fa;
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.4 var(--font);
+}
+
+[hidden] { display: none !important; }
+
+button { font: inherit; color: inherit; cursor: pointer; }
+
+.icon { flex: none; display: block; }
+
+.icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+}
+.icon-button:hover { background: var(--surface-strong); color: var(--text); }
+.icon-button:focus-visible, .text-button:focus-visible, .filled-button:focus-visible,
+.outlined-button:focus-visible, .thread:focus-visible, .message-header:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.filled-button, .outlined-button, .text-button {
+  min-height: 36px;
+  padding: 0 18px;
+  border-radius: 999px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.filled-button { border: 0; background: var(--primary); color: var(--on-primary); }
+.filled-button:hover { filter: brightness(1.08); }
+.filled-button:disabled { opacity: .6; cursor: default; }
+.outlined-button { border: 1px solid var(--outline); background: transparent; color: var(--primary); }
+.outlined-button:hover, .text-button:hover { background: var(--surface-strong); }
+.text-button { border: 0; background: transparent; color: var(--primary); padding: 0 12px; }
+
+.avatar {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: hsl(var(--hue, 210) 55% 45%);
+  color: #fff;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}

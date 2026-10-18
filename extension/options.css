@@ -1,0 +1,43 @@
+body.options { background: var(--surface); }
+#app { max-width: 680px; margin: 0 auto; padding: 24px 16px 48px; }
+.page-header h1 { margin: 0 0 16px; font-size: 22px; font-weight: 500; }
+
+.card {
+  margin-bottom: 16px;
+  padding: 16px 20px 20px;
+  border-radius: var(--radius);
+  background: var(--bg);
+  border: 1px solid var(--outline-soft);
+}
+.card h2 { margin: 0 0 8px; font-size: 16px; font-weight: 600; }
+.help { margin: 0 0 12px; color: var(--text-muted); }
+.privacy { text-align: center; font-size: 13px; }
+.status { min-height: 1.4em; margin: 6px 0 0; color: var(--text-muted); font-size: 13px; }
+
+.field { margin-top: 12px; }
+.field > label { display: block; margin-bottom: 4px; font-weight: 500; }
+.field.inline { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.field.inline > label { margin: 0; }
+.field.check { display: flex; align-items: center; gap: 10px; }
+.field.check > label { margin: 0; font-weight: 400; }
+.field.check input { width: 18px; height: 18px; accent-color: var(--primary); }
+
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.row > input { flex: 1; min-width: 200px; }
+
+input[type="text"], select {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--outline);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+input[type="text"]:focus, select:focus { outline: 2px solid var(--primary); outline-offset: -1px; }
+input[readonly] { background: var(--surface); }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+
+.account-list { list-style: none; margin: 0 0 12px; padding: 0; }
+.account-list li { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--outline-soft); }
+.account-email { flex: 1; overflow-wrap: anywhere; }
