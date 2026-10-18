@@ -416,6 +416,7 @@ var fr = {
   dismissAll: "Tout fermer",
   justNow: "\xE0 l\u2019instant",
   minutesAgo: "il y a {0} min",
+  olderMessages: "{0} messages pr\xE9c\xE9dents",
   // Page d'options
   optionsTitle: "R\xE9glages \u2014 Aper\xE7u Gmail",
   googleSection: "Connexion Google",
@@ -533,6 +534,7 @@ var en = {
   dismissAll: "Close all",
   justNow: "just now",
   minutesAgo: "{0} min ago",
+  olderMessages: "{0} earlier messages",
   optionsTitle: "Settings \u2014 Gmail Preview",
   googleSection: "Google sign-in",
   googleHelp: "Paste the OAuth client ID of your Google Cloud project (type \u201CWeb application\u201D). The step-by-step guide is in the project README.",
@@ -639,6 +641,17 @@ async function send(request) {
   if (!response) throw new RemoteError("failed", "no_response");
   if (!response.ok) throw new RemoteError(response.code, response.message);
   return response.data;
+}
+
+// src/lib/thread-layout.ts
+var GROUP_FROM = 4;
+function layoutThread(messages) {
+  const last = messages.length - 1;
+  const firstUnread = messages.findIndex((m) => m.unread);
+  const focusIndex = firstUnread >= 0 ? firstUnread : Math.max(0, last);
+  const expanded = messages.map((m, i) => m.unread || i === last);
+  const hidden = focusIndex >= GROUP_FROM ? [1, focusIndex - 2] : null;
+  return { focusIndex, expanded, hidden };
 }
 
 // src/lib/storage.ts
@@ -1007,7 +1020,7 @@ function renderMessage(message, expanded) {
     h("span", { class: "message-date" }, expanded ? formatLongDate(message.date) : formatShortDate(message.date))
   );
   const fill = (isExpanded) => {
-    article.className = `message ${isExpanded ? "expanded" : "collapsed"}`;
+    article.className = `message ${isExpanded ? "expanded" : "collapsed"}${message.unread ? " unread" : ""}`;
     headerEl.setAttribute("aria-expanded", String(isExpanded));
     const sub = headerEl.querySelector(".message-sub");
     if (sub) sub.textContent = isExpanded ? t("toLabel", message.to) : message.snippet;
@@ -1031,6 +1044,11 @@ function renderMessage(message, expanded) {
   headerEl.addEventListener("click", () => fill(!article.classList.contains("expanded")));
   fill(expanded);
   return article;
+}
+function scrollToMessage(toolbar, target) {
+  if (!target) return;
+  const top = target.getBoundingClientRect().top - detailView.getBoundingClientRect().top + detailView.scrollTop;
+  if (top > detailView.clientHeight * 0.4) detailView.scrollTop = top - toolbar.offsetHeight - 8;
 }
 async function openThread(section, thread) {
   const client = clientFor(section.email);
@@ -1056,12 +1074,27 @@ async function openThread(section, thread) {
   detailView.scrollTop = 0;
   try {
     const detail = await client.getThread(thread.id);
-    const lastIndex = detail.messages.length - 1;
+    const layout = layoutThread(detail.messages);
+    const rendered = detail.messages.map((m, i) => renderMessage(m, layout.expanded[i] ?? false));
+    const children = [...rendered];
+    if (layout.hidden) {
+      const [start, end] = layout.hidden;
+      const count = end - start + 1;
+      const group = h(
+        "button",
+        { type: "button", class: "older-messages", "aria-label": t("olderMessages", count) },
+        h("span", { class: "older-count" }, String(count)),
+        h("span", {}, t("olderMessages", count))
+      );
+      group.addEventListener("click", () => group.replaceWith(...rendered.slice(start, end + 1)));
+      children.splice(start, count, group);
+    }
     content.replaceChildren(
       h("h2", { class: "detail-subject" }, detail.subject || t("noSubject")),
       h("p", { class: "detail-account" }, section.email),
-      ...detail.messages.map((m, i) => renderMessage(m, i === lastIndex || m.unread))
+      ...children
     );
+    scrollToMessage(toolbar, rendered[layout.focusIndex]);
     if (thread.unread && settings.markReadOnOpen) {
       applyLocally(section, thread, "markRead", true);
       client.markRead(thread.id).then(refreshBadge, () => void 0);

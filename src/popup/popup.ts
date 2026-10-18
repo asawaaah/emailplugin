@@ -7,6 +7,7 @@ import { GmailClient, gmailWebUrl } from '../lib/gmail';
 import { formatLongDate, formatShortDate, setLanguage, t, unreadLabel } from '../lib/i18n';
 import { RemoteError, send } from '../lib/messages';
 import { buildEmailDocument, hasRemoteContent, textToHtml } from '../lib/mime';
+import { layoutThread } from '../lib/thread-layout';
 import { getAccountStates, getAccounts, getCollapsed, getSettings, saveSettings, setCollapsed } from '../lib/storage';
 import type { MessageDetail, Settings, ThreadSummary } from '../lib/types';
 
@@ -401,7 +402,7 @@ function renderMessage(message: MessageDetail, expanded: boolean): HTMLElement {
     h('span', { class: 'message-date' }, expanded ? formatLongDate(message.date) : formatShortDate(message.date)),
   );
   const fill = (isExpanded: boolean): void => {
-    article.className = `message ${isExpanded ? 'expanded' : 'collapsed'}`;
+    article.className = `message ${isExpanded ? 'expanded' : 'collapsed'}${message.unread ? ' unread' : ''}`;
     headerEl.setAttribute('aria-expanded', String(isExpanded));
     const sub = headerEl.querySelector('.message-sub');
     if (sub) sub.textContent = isExpanded ? t('toLabel', message.to) : message.snippet;
@@ -425,6 +426,17 @@ function renderMessage(message: MessageDetail, expanded: boolean): HTMLElement {
   headerEl.addEventListener('click', () => fill(!article.classList.contains('expanded')));
   fill(expanded);
   return article;
+}
+
+/**
+ * Amène le message visé (premier non lu, sinon le dernier) en haut de la
+ * lecture. Les messages au-dessus sont repliés : leur hauteur ne bouge plus.
+ * S'il est déjà visible près du haut, on garde l'objet de la conversation à l'écran.
+ */
+function scrollToMessage(toolbar: HTMLElement, target: HTMLElement | undefined): void {
+  if (!target) return;
+  const top = target.getBoundingClientRect().top - detailView.getBoundingClientRect().top + detailView.scrollTop;
+  if (top > detailView.clientHeight * 0.4) detailView.scrollTop = top - toolbar.offsetHeight - 8;
 }
 
 async function openThread(section: Section, thread: ThreadSummary): Promise<void> {
@@ -453,12 +465,28 @@ async function openThread(section: Section, thread: ThreadSummary): Promise<void
 
   try {
     const detail = await client.getThread(thread.id);
-    const lastIndex = detail.messages.length - 1;
+    const layout = layoutThread(detail.messages);
+    const rendered = detail.messages.map((m, i) => renderMessage(m, layout.expanded[i] ?? false));
+    const children: HTMLElement[] = [...rendered];
+    if (layout.hidden) {
+      // Anciens messages du milieu regroupés dans une ligne cliquable.
+      const [start, end] = layout.hidden;
+      const count = end - start + 1;
+      const group = h(
+        'button',
+        { type: 'button', class: 'older-messages', 'aria-label': t('olderMessages', count) },
+        h('span', { class: 'older-count' }, String(count)),
+        h('span', {}, t('olderMessages', count)),
+      );
+      group.addEventListener('click', () => group.replaceWith(...rendered.slice(start, end + 1)));
+      children.splice(start, count, group);
+    }
     content.replaceChildren(
       h('h2', { class: 'detail-subject' }, detail.subject || t('noSubject')),
       h('p', { class: 'detail-account' }, section.email),
-      ...detail.messages.map((m, i) => renderMessage(m, i === lastIndex || m.unread)),
+      ...children,
     );
+    scrollToMessage(toolbar, rendered[layout.focusIndex]);
     if (thread.unread && settings.markReadOnOpen) {
       applyLocally(section, thread, 'markRead', true);
       client.markRead(thread.id).then(refreshBadge, () => undefined);

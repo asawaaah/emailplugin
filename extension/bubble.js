@@ -148,6 +148,7 @@ var fr = {
   dismissAll: "Tout fermer",
   justNow: "\xE0 l\u2019instant",
   minutesAgo: "il y a {0} min",
+  olderMessages: "{0} messages pr\xE9c\xE9dents",
   // Page d'options
   optionsTitle: "R\xE9glages \u2014 Aper\xE7u Gmail",
   googleSection: "Connexion Google",
@@ -265,6 +266,7 @@ var en = {
   dismissAll: "Close all",
   justNow: "just now",
   minutesAgo: "{0} min ago",
+  olderMessages: "{0} earlier messages",
   optionsTitle: "Settings \u2014 Gmail Preview",
   googleSection: "Google sign-in",
   googleHelp: "Paste the OAuth client ID of your Google Cloud project (type \u201CWeb application\u201D). The step-by-step guide is in the project README.",

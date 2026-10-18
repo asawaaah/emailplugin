@@ -202,3 +202,37 @@ body.popup { width: 800px; }
   color: #f2f2f2;
   box-shadow: 0 2px 8px rgb(0 0 0 / .3);
 }
+
+/* Conversation : messages non lus repérés par un liseré */
+.message.unread { box-shadow: inset 3px 0 0 var(--primary); padding-left: 12px; margin-left: -12px; }
+.message.unread .message-header { padding-left: 0; }
+
+/* Anciens messages regroupés : « N messages précédents » */
+.older-messages {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 0;
+  border: 0;
+  border-top: 1px solid var(--outline-soft);
+  background: transparent;
+  color: var(--primary);
+  font-weight: 500;
+  text-align: left;
+}
+.older-messages:hover { background: var(--surface-hover); }
+.older-messages:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.older-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--outline);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+}

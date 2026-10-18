@@ -196,6 +196,38 @@ assert.equal(await page.locator('.message.expanded').count(), 1);
 await page.screenshot({ path: `${OUT}/5-conversation${suffix}.png` });
 await page.keyboard.press('Escape');
 
+// 6 bis. Longue conversation : anciens messages regroupés, défilement au premier non lu
+// (dates anciennes : pas de notification pour ces messages).
+mailbox['alice@gmail.com'].unshift({
+  id: 't5',
+  messages: [
+    msg('l0', 't5', 'Paul Côté <paul@asso.ca>', 'Organisation du tournoi', 'Bonjour à tous, voici le plan pour le tournoi de samedi.', 6000, false),
+    msg('l1', 't5', 'Alice <alice@gmail.com>', 'Re: Organisation du tournoi', 'Parfait, je m’occupe des inscriptions.', 5900, false),
+    msg('l2', 't5', 'Nadia Roy <nadia@asso.ca>', 'Re: Organisation du tournoi', 'J’apporte les ballons et les dossards.', 5800, false),
+    msg('l3', 't5', 'Paul Côté <paul@asso.ca>', 'Re: Organisation du tournoi', 'Merci ! Il manque encore un arbitre.', 5700, false),
+    msg('l4', 't5', 'Marc Gagné <marc@asso.ca>', 'Re: Organisation du tournoi', 'Je peux arbitrer le matin seulement, de 9 h à midi.', 5600, true),
+    msg('l5', 't5', 'Nadia Roy <nadia@asso.ca>', 'Re: Organisation du tournoi', 'Super, je prends l’après-midi alors. Rendez-vous à 8 h 30 au gymnase.', 5500, true),
+  ],
+});
+await page.goto(popupUrl);
+await page.waitForSelector('.thread');
+await threadsOf(0).filter({ hasText: 'Organisation du tournoi' }).click();
+await page.waitForSelector('.older-messages');
+assert.match(await page.locator('.older-messages').innerText(), /2\s*messages précédents/);
+assert.equal(await page.locator('.message').count(), 4, 'premier, 4e et les 2 non lus');
+assert.equal(await page.locator('.message.unread.expanded').count(), 2);
+await page.waitForTimeout(400); // hauteur des cadres de lecture
+const focusVisible = await page.evaluate(() => {
+  const view = document.querySelector('.detail-view').getBoundingClientRect();
+  const first = document.querySelector('.message.unread').getBoundingClientRect();
+  return first.top >= view.top && first.top < view.bottom - 120;
+});
+assert.ok(focusVisible, 'le premier message non lu est visible sans défiler');
+await page.screenshot({ path: `${OUT}/5b-longue-conversation${suffix}.png` });
+await page.locator('.older-messages').click();
+assert.equal(await page.locator('.message').count(), 6, 'tous les messages après un clic');
+await page.keyboard.press('Escape');
+
 // 7. Replier un compte : liste masquée, état mémorisé, nombre de non lus visible
 await sections.nth(0).locator('.section-toggle').click();
 await page.waitForTimeout(100);

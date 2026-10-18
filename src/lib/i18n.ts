@@ -59,6 +59,7 @@ const fr = {
   dismissAll: 'Tout fermer',
   justNow: 'à l’instant',
   minutesAgo: 'il y a {0} min',
+  olderMessages: '{0} messages précédents',
   // Page d'options
   optionsTitle: 'Réglages — Aperçu Gmail',
   googleSection: 'Connexion Google',
@@ -179,6 +180,7 @@ const en: Record<MessageKey, string> = {
   dismissAll: 'Close all',
   justNow: 'just now',
   minutesAgo: '{0} min ago',
+  olderMessages: '{0} earlier messages',
   optionsTitle: 'Settings — Gmail Preview',
   googleSection: 'Google sign-in',
   googleHelp: 'Paste the OAuth client ID of your Google Cloud project (type “Web application”). The step-by-step guide is in the project README.',
