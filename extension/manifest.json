@@ -27,5 +27,11 @@
     "type": "module"
   },
   "permissions": ["identity", "storage", "alarms", "notifications", "system.display", "scripting"],
+  "web_accessible_resources": [
+    {
+      "resources": ["bubble.html", "bubble.js", "bubble.css", "base.css", "notify.css"],
+      "matches": ["<all_urls>"]
+    }
+  ],
   "host_permissions": ["https://gmail.googleapis.com/*", "https://oauth2.googleapis.com/*", "<all_urls>"]
 }

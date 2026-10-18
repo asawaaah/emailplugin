@@ -11,6 +11,7 @@ const options = {
     popup: 'src/popup/popup.ts',
     options: 'src/options/options.ts',
     notify: 'src/notify/notify.ts',
+    bubble: 'src/bubble/bubble.ts',
   },
   outdir,
   bundle: true,

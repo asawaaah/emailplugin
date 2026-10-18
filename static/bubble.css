@@ -1,0 +1,15 @@
+/* Bulle dans l'onglet : cadre transparent posé sur la page, cartes flottantes. */
+:root { color-scheme: normal; } /* sinon le navigateur peint un fond opaque en thème sombre */
+html, body, body.bubble { background: transparent; }
+/* Ombre contenue dans la marge de 8 px du cadre, sinon elle est coupée net. */
+.toast-card { box-shadow: 0 2px 6px rgb(0 0 0 / .16), 0 1px 2px rgb(0 0 0 / .1); }
+.toast-footer {
+  padding: 4px 4px 4px 12px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--outline-soft);
+  box-shadow: 0 2px 6px rgb(0 0 0 / .12);
+}
+@media (prefers-color-scheme: dark) {
+  .toast-card { box-shadow: 0 2px 6px rgb(0 0 0 / .5); }
+}

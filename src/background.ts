@@ -19,7 +19,7 @@ import {
   saveToasts,
 } from './lib/storage';
 import { cornerBounds, workArea } from './lib/toast-window';
-import type { ToastTabMessage, ToastTabOptions } from './content/toast';
+import type { ToastTabMessage } from './content/toast';
 import type { AccountState, MessageMeta, SeenState, Settings, Toast } from './lib/types';
 
 const ALARM = 'poll';
@@ -150,10 +150,6 @@ async function getToastTabId(): Promise<number | null> {
   return typeof toastTabId === 'number' ? toastTabId : null;
 }
 
-async function setToastTabId(id: number | null): Promise<void> {
-  await chrome.storage.session.set({ toastTabId: id });
-}
-
 /** Onglet affiché dans la dernière fenêtre du navigateur utilisée. */
 async function activeTab(): Promise<chrome.tabs.Tab | undefined> {
   const browser = await chrome.windows.getLastFocused({ windowTypes: ['normal'], populate: true }).catch(() => undefined);
@@ -180,28 +176,22 @@ async function pushToTab(settings: Settings): Promise<boolean> {
   if (previous !== null && (previous !== target || !queue.length)) {
     await sendToTab(previous, { type: 'clearToasts' }).catch(() => undefined);
   }
-  if (!queue.length) {
-    await setToastTabId(null);
-    return true;
+  if (!queue.length || target === undefined) {
+    await chrome.storage.session.set({ toastTabId: null, bubbleToken: null });
+    return Boolean(!queue.length);
   }
-  if (target === undefined) {
-    await setToastTabId(null);
-    return false;
-  }
-  const accounts = await getAccounts();
-  const options: ToastTabOptions = {
-    seconds: settings.notificationSeconds,
-    position: settings.notificationPosition,
-    language: settings.language,
-    ranks: Object.fromEntries(accounts.map((a, i) => [a.email, i])),
-  };
+  // Jeton à usage unique : le cadre de la bulle ne montre rien sans lui, même
+  // chargé par un site. Nouveau jeton à chaque changement d'onglet.
+  const { bubbleToken } = await chrome.storage.session.get('bubbleToken');
+  const token = previous === target && typeof bubbleToken === 'string' ? bubbleToken : crypto.randomUUID();
+  await chrome.storage.session.set({ toastTabId: target, bubbleToken: token });
   try {
     await chrome.scripting.executeScript({ target: { tabId: target }, files: ['toast-content.js'] });
-    await sendToTab(target, { type: 'renderToasts', toasts: queue, options });
-    await setToastTabId(target);
+    // La page ne reçoit que l'adresse du cadre : les courriels restent dans l'extension.
+    await sendToTab(target, { type: 'mountBubble', src: `${chrome.runtime.getURL('bubble.html')}#${token}`, position: settings.notificationPosition });
     return true;
   } catch {
-    await setToastTabId(null);
+    await chrome.storage.session.set({ toastTabId: null, bubbleToken: null });
     return false;
   }
 }
@@ -419,8 +409,14 @@ async function handle(request: Request): Promise<unknown> {
   }
 }
 
+/** Adresse des pages de l'extension (popup, réglages, fenêtre et bulle de notification). */
+const EXTENSION_ORIGIN = chrome.runtime.getURL('');
+
 chrome.runtime.onMessage.addListener((request: Request, sender, sendResponse) => {
-  if (sender.id !== chrome.runtime.id) return false;
+  // Seules les pages de l'extension sont écoutées. Le script injecté dans les
+  // sites n'envoie rien : une page web compromise ne peut donc ni obtenir de
+  // jeton Gmail ni déclencher d'action.
+  if (sender.id !== chrome.runtime.id || !sender.url?.startsWith(EXTENSION_ORIGIN)) return false;
   handle(request).then(
     (data) => sendResponse({ ok: true, data } satisfies Response),
     (error: unknown) => sendResponse(toErrorResponse(error)),

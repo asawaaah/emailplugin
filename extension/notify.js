@@ -1,3 +1,19 @@
+// src/lib/messages.ts
+var RemoteError = class extends Error {
+  constructor(code, message) {
+    super(message);
+    this.code = code;
+    this.name = "RemoteError";
+  }
+  code;
+};
+async function send(request) {
+  const response = await chrome.runtime.sendMessage(request);
+  if (!response) throw new RemoteError("failed", "no_response");
+  if (!response.ok) throw new RemoteError(response.code, response.message);
+  return response.data;
+}
+
 // src/lib/dom.ts
 function h(tag, attrs = {}, ...children) {
   const el = document.createElement(tag);
@@ -300,22 +316,6 @@ function formatShortDate(timestamp, now = Date.now()) {
   return new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", year: "numeric" }).format(date);
 }
 
-// src/lib/messages.ts
-var RemoteError = class extends Error {
-  constructor(code, message) {
-    super(message);
-    this.code = code;
-    this.name = "RemoteError";
-  }
-  code;
-};
-async function send(request) {
-  const response = await chrome.runtime.sendMessage(request);
-  if (!response) throw new RemoteError("failed", "no_response");
-  if (!response.ok) throw new RemoteError(response.code, response.message);
-  return response.data;
-}
-
 // src/lib/storage.ts
 var DEFAULT_SETTINGS = {
   clientId: "",
@@ -331,165 +331,189 @@ var DEFAULT_SETTINGS = {
   notificationPosition: "top-right"
 };
 async function getSettings() {
-  const { settings: settings2 } = await chrome.storage.local.get("settings");
-  return { ...DEFAULT_SETTINGS, ...settings2 };
+  const { settings } = await chrome.storage.local.get("settings");
+  return { ...DEFAULT_SETTINGS, ...settings };
 }
 async function getAccounts() {
   const { accounts } = await chrome.storage.local.get("accounts");
   return accounts ?? [];
 }
 async function getToasts() {
-  const { toasts: toasts2 } = await chrome.storage.session.get("toasts");
-  return toasts2 ?? [];
+  const { toasts } = await chrome.storage.session.get("toasts");
+  return toasts ?? [];
+}
+
+// src/lib/toast-view.ts
+var MAX_VISIBLE = 3;
+var TICK_MS = 250;
+async function startToastView(app2, host) {
+  const settings = await getSettings();
+  setLanguage(settings.language);
+  document.title = t("toastTitle");
+  const ranks = new Map((await getAccounts()).map((a, i) => [a.email, i]));
+  let toasts = await getToasts();
+  const deadlines = /* @__PURE__ */ new Map();
+  const shown = /* @__PURE__ */ new Set();
+  let lastHeight = 0;
+  let lastTick = Date.now();
+  let hovered = false;
+  document.documentElement.addEventListener("mouseover", () => {
+    hovered = true;
+  });
+  document.documentElement.addEventListener("mouseout", (event) => {
+    if (!event.relatedTarget) hovered = false;
+  });
+  const newestLast = settings.notificationPosition === "bottom-right";
+  const relativeTime = (date) => {
+    const minutes = Math.floor((Date.now() - date) / 6e4);
+    if (minutes < 1) return t("justNow");
+    if (minutes < 60) return t("minutesAgo", minutes);
+    return formatShortDate(date);
+  };
+  const dismiss = (keys) => {
+    const remove = new Set(keys);
+    keys.forEach((k) => deadlines.delete(k));
+    toasts = toasts.filter((toast) => !remove.has(toast.key));
+    render();
+    void send({ type: "dismissToasts", keys }).catch(() => void 0);
+  };
+  const act = async (toast, card, action) => {
+    card.classList.add("busy");
+    try {
+      if (action === "open") await send({ type: "openThread", email: toast.email, threadId: toast.threadId });
+      else if (toast.threadId) await send({ type: "threadAction", email: toast.email, threadId: toast.threadId, action });
+      dismiss([toast.key]);
+    } catch {
+      card.classList.remove("busy");
+      const error = card.querySelector(".toast-error");
+      if (error) error.textContent = t("actionError");
+    }
+  };
+  const actionButton = (label, className, onClick) => {
+    const button = h("button", { type: "button", class: className }, label);
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      onClick();
+    });
+    return button;
+  };
+  const renderCard = (toast) => {
+    const card = h("article", {
+      class: shown.has(toast.key) ? "toast-card" : "toast-card new",
+      tabindex: 0,
+      "aria-label": `${toast.email} \u2014 ${toast.subject || t("noSubject")}`
+    });
+    card.style.setProperty("--hue", String(accountHue(ranks.get(toast.email) ?? 0)));
+    const deadline = deadlines.get(toast.key);
+    let progress = null;
+    if (deadline !== void 0 && settings.notificationSeconds > 0) {
+      const total = settings.notificationSeconds * 1e3;
+      const remaining = Math.max(0, deadline - Date.now());
+      const bar = h("span", {});
+      bar.style.animationDuration = `${total}ms`;
+      bar.style.animationDelay = `-${total - remaining}ms`;
+      progress = h("div", { class: "toast-progress" }, bar);
+    }
+    card.append(
+      h(
+        "div",
+        { class: "toast-head" },
+        h("span", { class: "toast-account" }, h("span", { class: "account-dot", "aria-hidden": "true" }), toast.email),
+        h("span", { class: "toast-time" }, relativeTime(toast.date)),
+        iconButton("close", t("dismiss"), () => dismiss([toast.key]), "small")
+      ),
+      h("div", { class: "toast-from" }, toast.from.name),
+      h("div", { class: "toast-subject" }, toast.subject || t("noSubject")),
+      toast.snippet ? h("div", { class: "toast-snippet" }, toast.snippet) : "",
+      toast.threadId ? h(
+        "div",
+        { class: "toast-actions" },
+        actionButton(t("toastOpen"), "tonal-button", () => void act(toast, card, "open")),
+        actionButton(t("markRead"), "text-button", () => void act(toast, card, "markRead")),
+        actionButton(t("archive"), "text-button", () => void act(toast, card, "archive"))
+      ) : "",
+      h("div", { class: "toast-error", role: "alert" }),
+      progress ?? ""
+    );
+    if (toast.threadId) {
+      card.addEventListener("click", () => void act(toast, card, "open"));
+      card.addEventListener("keydown", (event) => {
+        if (event.target === card && event.key === "Enter") void act(toast, card, "open");
+      });
+    }
+    return card;
+  };
+  const measure = () => {
+    const height = Math.ceil(app2.getBoundingClientRect().height);
+    if (Math.abs(height - lastHeight) < 2) return;
+    lastHeight = height;
+    host.resize(height);
+  };
+  function render() {
+    if (!toasts.length) {
+      app2.replaceChildren();
+      host.empty();
+      return;
+    }
+    const visible = toasts.slice(0, MAX_VISIBLE);
+    if (settings.notificationSeconds > 0) {
+      for (const toast of visible) if (!deadlines.has(toast.key)) deadlines.set(toast.key, Date.now() + settings.notificationSeconds * 1e3);
+    }
+    const hidden = toasts.length - visible.length;
+    const cards = visible.map(renderCard);
+    visible.forEach((toast) => shown.add(toast.key));
+    if (newestLast) cards.reverse();
+    const footer = toasts.length > 1 ? h(
+      "div",
+      { class: "toast-footer" },
+      h("span", {}, hidden > 0 ? hidden === 1 ? t("toastMoreOne") : t("toastMore", hidden) : ""),
+      actionButton(t("dismissAll"), "text-button", () => dismiss(toasts.map((x) => x.key)))
+    ) : null;
+    const items = footer ? newestLast ? [footer, ...cards] : [...cards, footer] : cards;
+    app2.replaceChildren(...items);
+    measure();
+  }
+  function tick() {
+    const now = Date.now();
+    const running = toasts.length > 0 && !hovered && host.active();
+    document.body.classList.toggle("paused", !running);
+    if (!running || settings.notificationSeconds <= 0) {
+      for (const [key, deadline] of deadlines) deadlines.set(key, deadline + (now - lastTick));
+    } else {
+      const expired = [...deadlines.entries()].filter(([, deadline]) => deadline <= now).map(([key]) => key);
+      if (expired.length) dismiss(expired);
+    }
+    lastTick = now;
+  }
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "session" || !changes.toasts) return;
+    toasts = changes.toasts.newValue ?? [];
+    for (const key of deadlines.keys()) if (!toasts.some((x) => x.key === key)) deadlines.delete(key);
+    render();
+  });
+  render();
+  window.setInterval(tick, TICK_MS);
+  return {
+    pointerLeft() {
+      hovered = false;
+    }
+  };
 }
 
 // src/notify/notify.ts
-var MAX_VISIBLE = 3;
 var app = document.getElementById("app");
-var settings;
-var toasts = [];
-var windowId;
-var lastHeight = 0;
-var deadlines = /* @__PURE__ */ new Map();
-var pausedAt = null;
-var ranks = /* @__PURE__ */ new Map();
-function relativeTime(date) {
-  const minutes = Math.floor((Date.now() - date) / 6e4);
-  if (minutes < 1) return t("justNow");
-  if (minutes < 60) return t("minutesAgo", minutes);
-  return formatShortDate(date);
-}
-async function dismiss(keys) {
-  const remove = new Set(keys);
-  keys.forEach((k) => deadlines.delete(k));
-  toasts = toasts.filter((toast) => !remove.has(toast.key));
-  render();
-  await send({ type: "dismissToasts", keys }).catch(() => void 0);
-}
-async function act(toast, card, action) {
-  card.classList.add("busy");
-  try {
-    if (action === "open") await send({ type: "openThread", email: toast.email, threadId: toast.threadId });
-    else if (toast.threadId) await send({ type: "threadAction", email: toast.email, threadId: toast.threadId, action });
-    await dismiss([toast.key]);
-  } catch {
-    card.classList.remove("busy");
-    const error = card.querySelector(".toast-error");
-    if (error) error.textContent = t("actionError");
-  }
-}
-function renderCard(toast) {
-  const card = h("article", { class: "toast-card", tabindex: 0, "aria-label": `${toast.email} \u2014 ${toast.subject || t("noSubject")}` });
-  card.style.setProperty("--hue", String(accountHue(ranks.get(toast.email) ?? 0)));
-  const actions = toast.threadId ? h(
-    "div",
-    { class: "toast-actions" },
-    h("button", { type: "button", class: "tonal-button", onclick: ((e) => {
-      e.stopPropagation();
-      void act(toast, card, "open");
-    }) }, t("toastOpen")),
-    h("button", { type: "button", class: "text-button", onclick: ((e) => {
-      e.stopPropagation();
-      void act(toast, card, "markRead");
-    }) }, t("markRead")),
-    h("button", { type: "button", class: "text-button", onclick: ((e) => {
-      e.stopPropagation();
-      void act(toast, card, "archive");
-    }) }, t("archive"))
-  ) : null;
-  const deadline = deadlines.get(toast.key);
-  let progress = null;
-  if (deadline !== void 0 && settings.notificationSeconds > 0) {
-    const total = settings.notificationSeconds * 1e3;
-    const elapsed = Math.max(0, total - (deadline - (pausedAt ?? Date.now())));
-    progress = h("div", { class: "toast-progress" }, h("span", {}));
-    const bar = progress.firstElementChild;
-    bar.style.animationDuration = `${total}ms`;
-    bar.style.animationDelay = `-${elapsed}ms`;
-  }
-  card.append(
-    h(
-      "div",
-      { class: "toast-head" },
-      h("span", { class: "toast-account" }, h("span", { class: "account-dot", "aria-hidden": "true" }), toast.email),
-      h("span", { class: "toast-time" }, relativeTime(toast.date)),
-      iconButton("close", t("dismiss"), () => void dismiss([toast.key]), "small")
-    ),
-    h("div", { class: "toast-from" }, toast.from.name),
-    h("div", { class: "toast-subject" }, toast.subject || t("noSubject")),
-    toast.snippet ? h("div", { class: "toast-snippet" }, toast.snippet) : "",
-    actions ?? "",
-    h("div", { class: "toast-error", role: "alert" }),
-    progress ?? ""
-  );
-  if (toast.threadId) {
-    card.addEventListener("click", () => void act(toast, card, "open"));
-    card.addEventListener("keydown", (event) => {
-      if (event.target === card && event.key === "Enter") void act(toast, card, "open");
-    });
-  }
-  return card;
-}
-function resize() {
-  if (windowId === void 0) return;
-  const frame = window.outerHeight - window.innerHeight;
-  const height = Math.ceil(app.getBoundingClientRect().height) + frame;
-  if (Math.abs(height - lastHeight) < 3) return;
-  lastHeight = height;
-  void send({ type: "placeToastWindow", windowId, height }).catch(() => void 0);
-}
-function render() {
-  if (!toasts.length) {
-    window.close();
-    return;
-  }
-  const visible = toasts.slice(0, MAX_VISIBLE);
-  if (settings.notificationSeconds > 0) {
-    const now = pausedAt ?? Date.now();
-    for (const toast of visible) if (!deadlines.has(toast.key)) deadlines.set(toast.key, now + settings.notificationSeconds * 1e3);
-  }
-  const hidden = toasts.length - visible.length;
-  const footer = h(
-    "div",
-    { class: "toast-footer" },
-    h("span", {}, hidden > 0 ? hidden === 1 ? t("toastMoreOne") : t("toastMore", hidden) : ""),
-    toasts.length > 1 ? h("button", { type: "button", class: "text-button", onclick: (() => void dismiss(toasts.map((x) => x.key))) }, t("dismissAll")) : ""
-  );
-  app.replaceChildren(...visible.map(renderCard), ...hidden > 0 || toasts.length > 1 ? [footer] : []);
-  requestAnimationFrame(resize);
-}
-function tick() {
-  if (pausedAt !== null || settings.notificationSeconds <= 0) return;
-  const now = Date.now();
-  const expired = [...deadlines.entries()].filter(([, deadline]) => deadline <= now).map(([key]) => key);
-  if (expired.length) void dismiss(expired);
-}
-document.addEventListener("mouseenter", () => {
-  pausedAt = Date.now();
-  document.body.classList.add("paused");
-});
-document.addEventListener("mouseleave", () => {
-  if (pausedAt !== null) {
-    const pause = Date.now() - pausedAt;
-    for (const [key, deadline] of deadlines) deadlines.set(key, deadline + pause);
-  }
-  pausedAt = null;
-  document.body.classList.remove("paused");
-});
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== "session" || !changes.toasts) return;
-  toasts = changes.toasts.newValue ?? [];
-  for (const key of deadlines.keys()) if (!toasts.some((x) => x.key === key)) deadlines.delete(key);
-  render();
-});
 async function init() {
-  settings = await getSettings();
-  setLanguage(settings.language);
-  document.title = t("toastTitle");
-  windowId = (await chrome.windows.getCurrent()).id;
-  ranks = new Map((await getAccounts()).map((a, i) => [a.email, i]));
-  toasts = await getToasts();
-  render();
-  window.setInterval(tick, 250);
+  const windowId = (await chrome.windows.getCurrent()).id;
+  await startToastView(app, {
+    resize(height) {
+      if (windowId === void 0) return;
+      const frame = window.outerHeight - window.innerHeight;
+      void send({ type: "placeToastWindow", windowId, height: height + frame }).catch(() => void 0);
+    },
+    empty() {
+      window.close();
+    },
+    active: () => true
+  });
 }
 void init();

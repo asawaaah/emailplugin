@@ -240,45 +240,25 @@ await context.route('https://site.exemple/**', (route) => route.fulfill({
   </body></html>`,
 }));
 
-// Lecture du contenu de la bulle (Shadow DOM fermé) par le protocole de débogage.
+// La bulle est un cadre de l'extension (bubble.html) posé dans la page.
+function bubbleFrame(p) {
+  return p.frames().find((f) => f.url().includes('/bubble.html') && !f.isDetached());
+}
 async function bubble(p) {
-  const cdp = await context.newCDPSession(p);
+  const frame = bubbleFrame(p);
+  if (!frame) return null;
   try {
-    const { root } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true });
-    const find = (n) => (n.nodeName === 'APERCU-GMAIL-TOASTS' ? n : (n.children ?? []).map(find).find(Boolean));
-    const host = find(root);
-    const stack = host?.shadowRoots?.[0]?.children?.find((c) => c.nodeName === 'DIV');
-    if (!stack) return null;
-    const { outerHTML } = await cdp.send('DOM.getOuterHTML', { nodeId: stack.nodeId });
-    const { nodeIds: cards } = await cdp.send('DOM.querySelectorAll', { nodeId: stack.nodeId, selector: 'article.card' });
-    const text = outerHTML.replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ');
-    return { text, cards: cards.length };
-  } finally {
-    await cdp.detach();
+    const cards = await frame.locator('.toast-card').count();
+    if (!cards) return null;
+    return { text: (await frame.locator('#app').innerText()).replace(/\s+/g, ' '), cards };
+  } catch {
+    return null;
   }
 }
 async function clickInBubble(p, cardText, buttonText) {
-  const cdp = await context.newCDPSession(p);
-  try {
-    const { root } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true });
-    const find = (n) => (n.nodeName === 'APERCU-GMAIL-TOASTS' ? n : (n.children ?? []).map(find).find(Boolean));
-    const shadow = find(root).shadowRoots[0];
-    const { nodeIds: cards } = await cdp.send('DOM.querySelectorAll', { nodeId: shadow.nodeId, selector: cardText ? 'article.card' : '.footer' });
-    for (const card of cards) {
-      if (cardText && !(await cdp.send('DOM.getOuterHTML', { nodeId: card })).outerHTML.includes(cardText)) continue;
-      const { nodeIds: buttons } = await cdp.send('DOM.querySelectorAll', { nodeId: card, selector: 'button' });
-      for (const button of buttons) {
-        if (!(await cdp.send('DOM.getOuterHTML', { nodeId: button })).outerHTML.includes(buttonText)) continue;
-        const { model } = await cdp.send('DOM.getBoxModel', { nodeId: button });
-        const [x1, y1, , , x3, y3] = model.content;
-        await p.mouse.click((x1 + x3) / 2, (y1 + y3) / 2);
-        return;
-      }
-    }
-    throw new Error(`bouton « ${buttonText} » introuvable`);
-  } finally {
-    await cdp.detach();
-  }
+  const frame = bubbleFrame(p);
+  const scope = cardText ? frame.locator('.toast-card', { hasText: cardText }) : frame.locator('.toast-footer');
+  await scope.getByRole('button', { name: buttonText, exact: true }).click();
 }
 const waitFor = async (check, label, timeout = 8000) => {
   const start = Date.now();
@@ -298,6 +278,14 @@ await site.goto('https://site.exemple/article');
 await site.bringToFront();
 assert.equal(await bubble(site), null);
 
+// Sécurité : un script exécuté dans un site ne peut rien obtenir du service worker.
+const siteTabId = await worker.evaluate(async () => (await chrome.tabs.query({ url: 'https://site.exemple/*' }))[0]?.id);
+const [{ result: stolen }] = await worker.evaluate((tabId) => chrome.scripting.executeScript({
+  target: { tabId },
+  func: () => chrome.runtime.sendMessage({ type: 'getToken', email: 'alice@gmail.com' }).then((r) => JSON.stringify(r ?? null), (e) => `refus: ${e.message}`),
+}), siteTabId);
+assert.ok(!String(stolen).includes('tok-'), `aucun jeton pour un script de page (${stolen})`);
+
 mailbox['alice@gmail.com'].unshift({
   id: 't9',
   messages: [msg('m9', 't9', 'Hydro-Québec <factures@hydro.qc.ca>', 'Votre facture est prête', 'Montant à payer : 84,12 $. Échéance le 3 novembre.', 0, true)],
@@ -309,6 +297,9 @@ for (const expected of ['alice@gmail.com', 'Hydro-Québec', 'Votre facture est p
   assert.ok(first.text.includes(expected), `la bulle affiche « ${expected} »`);
 }
 assert.equal(await systemCount(), 0, 'pas de notification du système quand la bulle s’affiche');
+// Sécurité : le contenu des courriels n'entre jamais dans la page du site.
+assert.equal(await site.evaluate(() => document.documentElement.outerHTML.includes('Hydro')), false, 'rien dans la page du site');
+assert.equal(await site.evaluate(() => document.querySelector('apercu-gmail-bubble')?.shadowRoot ?? null), null, 'cadre caché au site');
 await site.screenshot({ path: `${OUT}/8-bulle-onglet${suffix}.png` });
 
 // Deux autres courriels, sur les deux comptes : les bulles s'empilent

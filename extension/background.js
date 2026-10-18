@@ -765,9 +765,6 @@ async function getToastTabId() {
   const { toastTabId } = await chrome.storage.session.get("toastTabId");
   return typeof toastTabId === "number" ? toastTabId : null;
 }
-async function setToastTabId(id) {
-  await chrome.storage.session.set({ toastTabId: id });
-}
 async function activeTab() {
   const browser = await chrome.windows.getLastFocused({ windowTypes: ["normal"], populate: true }).catch(() => void 0);
   return browser?.tabs?.find((tab) => tab.active);
@@ -785,28 +782,19 @@ async function pushToTab(settings) {
   if (previous !== null && (previous !== target || !queue.length)) {
     await sendToTab(previous, { type: "clearToasts" }).catch(() => void 0);
   }
-  if (!queue.length) {
-    await setToastTabId(null);
-    return true;
+  if (!queue.length || target === void 0) {
+    await chrome.storage.session.set({ toastTabId: null, bubbleToken: null });
+    return Boolean(!queue.length);
   }
-  if (target === void 0) {
-    await setToastTabId(null);
-    return false;
-  }
-  const accounts = await getAccounts();
-  const options = {
-    seconds: settings.notificationSeconds,
-    position: settings.notificationPosition,
-    language: settings.language,
-    ranks: Object.fromEntries(accounts.map((a, i) => [a.email, i]))
-  };
+  const { bubbleToken } = await chrome.storage.session.get("bubbleToken");
+  const token = previous === target && typeof bubbleToken === "string" ? bubbleToken : crypto.randomUUID();
+  await chrome.storage.session.set({ toastTabId: target, bubbleToken: token });
   try {
     await chrome.scripting.executeScript({ target: { tabId: target }, files: ["toast-content.js"] });
-    await sendToTab(target, { type: "renderToasts", toasts: queue, options });
-    await setToastTabId(target);
+    await sendToTab(target, { type: "mountBubble", src: `${chrome.runtime.getURL("bubble.html")}#${token}`, position: settings.notificationPosition });
     return true;
   } catch {
-    await setToastTabId(null);
+    await chrome.storage.session.set({ toastTabId: null, bubbleToken: null });
     return false;
   }
 }
@@ -989,8 +977,9 @@ async function handle(request) {
     }
   }
 }
+var EXTENSION_ORIGIN = chrome.runtime.getURL("");
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (sender.id !== chrome.runtime.id) return false;
+  if (sender.id !== chrome.runtime.id || !sender.url?.startsWith(EXTENSION_ORIGIN)) return false;
   handle(request).then(
     (data) => sendResponse({ ok: true, data }),
     (error) => sendResponse(toErrorResponse(error))
