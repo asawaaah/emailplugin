@@ -1,7 +1,8 @@
 // Fenêtre ouverte par un clic sur l'icône : liste des conversations de chaque
 // compte, lecture d'une conversation et actions rapides.
 
-import { accountHue, avatar, h, icon, iconButton } from '../lib/dom';
+import { accountColor } from '../lib/colors';
+import { avatar, h, icon, iconButton } from '../lib/dom';
 import { GmailClient, gmailWebUrl } from '../lib/gmail';
 import { formatLongDate, formatShortDate, setLanguage, t, unreadLabel } from '../lib/i18n';
 import { RemoteError, send } from '../lib/messages';
@@ -17,8 +18,8 @@ interface Section {
   threads: ThreadSummary[];
   unread: number | null;
   collapsed: boolean;
-  /** Rang dans le classement des comptes (donne sa couleur). */
-  rank: number;
+  /** Couleur du compte (choisie dans les Réglages, sinon selon son rang). */
+  color: string;
   el: HTMLElement;
 }
 
@@ -144,7 +145,7 @@ function renderSection(section: Section): void {
       title: t(section.collapsed ? 'expand' : 'collapse', section.email),
     },
     h('span', { class: 'chevron' }, icon('expandMore')),
-    avatar(section.email, section.email, accountHue(section.rank)),
+    avatar(section.email, section.email, section.color),
     h(
       'span',
       { class: 'section-title' },
@@ -209,14 +210,14 @@ function renderThreadRow(section: Section, thread: ThreadSummary): HTMLElement {
       role: 'button',
       'aria-label': `${thread.from.name} — ${thread.subject || t('noSubject')}`,
     },
-    h('span', { class: 'thread-from' }, h('span', { class: 'thread-name' }, thread.from.name), count),
     h(
       'div',
-      { class: 'thread-text' },
-      h('div', { class: 'thread-subject' }, thread.subject || t('noSubject')),
-      h('div', { class: 'thread-snippet' }, thread.snippet),
+      { class: 'thread-top' },
+      h('span', { class: 'thread-from' }, h('span', { class: 'thread-name' }, thread.from.name), count),
+      h('span', { class: 'thread-date' }, formatShortDate(thread.date)),
     ),
-    h('span', { class: 'thread-date' }, formatShortDate(thread.date)),
+    h('div', { class: 'thread-subject' }, thread.subject || t('noSubject')),
+    thread.snippet ? h('div', { class: 'thread-snippet' }, thread.snippet) : '',
     h(
       'div',
       { class: 'thread-actions' },
@@ -505,7 +506,8 @@ async function init(): Promise<void> {
     return;
   }
 
-  for (const [rank, { email }] of accounts.entries()) {
+  for (const [rank, account] of accounts.entries()) {
+    const { email } = account;
     const el = h('section', { class: 'account-section', 'aria-label': email });
     const section: Section = {
       email,
@@ -513,7 +515,7 @@ async function init(): Promise<void> {
       threads: [],
       unread: states[email]?.unread ?? null,
       collapsed: collapsed.has(email),
-      rank,
+      color: accountColor(account, rank),
       el,
     };
     sections.set(email, section);

@@ -46,3 +46,23 @@ input[readonly] { background: var(--surface); }
 .notif-test { margin-top: 16px; }
 .notif-test .help { margin: 8px 0 0; font-size: 13px; }
 .field-help { margin: 4px 0 0; font-size: 13px; }
+
+/* Couleur des comptes */
+.account-list li { display: block; }
+.account-row { display: flex; align-items: center; gap: 12px; }
+.color-button, .swatch {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--bg);
+  background: var(--swatch);
+  box-shadow: 0 0 0 1px var(--outline);
+}
+.color-button:hover, .swatch:hover { box-shadow: 0 0 0 2px var(--outline); }
+.color-button[aria-expanded="true"], .swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--text); }
+.color-button:focus-visible, .swatch:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.palette { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 0 4px 32px; }
+.custom-label { display: inline-flex; align-items: center; gap: 6px; margin-left: 6px; font-size: 13px; color: var(--text-muted); cursor: pointer; }
+.custom-color { width: 32px; height: 28px; padding: 0; border: 1px solid var(--outline); border-radius: 6px; background: none; cursor: pointer; }

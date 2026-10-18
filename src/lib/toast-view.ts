@@ -3,7 +3,8 @@
 // fenêtre séparée (notify.html). Ces deux pages appartiennent à l'extension :
 // le contenu des courriels n'entre jamais dans les pages web visitées.
 
-import { accountHue, h, iconButton } from './dom';
+import { accountColors } from './colors';
+import { h, iconButton } from './dom';
 import { formatShortDate, setLanguage, t } from './i18n';
 import { send } from './messages';
 import { getAccounts, getSettings, getToasts } from './storage';
@@ -30,7 +31,7 @@ export async function startToastView(app: HTMLElement, host: ToastViewHost): Pro
   const settings: Settings = await getSettings();
   setLanguage(settings.language);
   document.title = t('toastTitle');
-  const ranks = new Map((await getAccounts()).map((a, i) => [a.email, i]));
+  const colors = accountColors(await getAccounts());
   let toasts: Toast[] = await getToasts();
   /** Échéance de fermeture de chaque carte affichée (ms). */
   const deadlines = new Map<string, number>();
@@ -94,7 +95,7 @@ export async function startToastView(app: HTMLElement, host: ToastViewHost): Pro
       tabindex: 0,
       'aria-label': `${toast.email} — ${toast.subject || t('noSubject')}`,
     });
-    card.style.setProperty('--hue', String(accountHue(ranks.get(toast.email) ?? 0)));
+    card.style.setProperty('--account', colors.get(toast.email) ?? '#1a73e8');
 
     const deadline = deadlines.get(toast.key);
     let progress: HTMLElement | null = null;
@@ -108,16 +109,17 @@ export async function startToastView(app: HTMLElement, host: ToastViewHost): Pro
     }
 
     card.append(
+      // Expéditeur (1 ligne), objet (1 ligne), aperçu (2 lignes), puis le compte destinataire.
       h(
         'div',
         { class: 'toast-head' },
-        h('span', { class: 'toast-account' }, h('span', { class: 'account-dot', 'aria-hidden': 'true' }), toast.email),
+        h('span', { class: 'toast-from' }, toast.from.name),
         h('span', { class: 'toast-time' }, relativeTime(toast.date)),
         iconButton('close', t('dismiss'), () => dismiss([toast.key]), 'small'),
       ),
-      h('div', { class: 'toast-from' }, toast.from.name),
       h('div', { class: 'toast-subject' }, toast.subject || t('noSubject')),
       toast.snippet ? h('div', { class: 'toast-snippet' }, toast.snippet) : '',
+      h('div', { class: 'toast-account' }, h('span', { class: 'account-dot', 'aria-hidden': 'true' }), toast.email),
       toast.threadId
         ? h(
             'div',

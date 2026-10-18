@@ -4,7 +4,8 @@ Extension Chrome pour voir et trier ses courriels Gmail d'un clic, à la manièr
 
 - **Badge** sur l'icône : nombre de conversations non lues, tous comptes confondus (vérifié chaque minute par défaut).
 - **Non lus seulement** par défaut ; bascule « Non lus / Tous » en haut de la fenêtre.
-- **Plusieurs comptes Gmail**, chacun dans sa section, **repliable** d'un clic, dans l'**ordre de votre choix** (flèches dans les Réglages).
+- **Plusieurs comptes Gmail**, chacun dans sa section, **repliable** d'un clic, dans l'**ordre** et la **couleur** de votre choix (flèches et pastille de couleur dans les Réglages : 10 couleurs proposées ou une couleur personnalisée).
+- Chaque conversation sur 4 lignes : **expéditeur** et date, **objet**, puis **2 lignes d'aperçu**.
 - **Notifications** à chaque nouveau courriel, dans une **bulle en haut à droite de l'onglet ouvert**, quel que soit le site : compte qui l'a reçu (avec sa couleur), expéditeur, objet et aperçu ; boutons « Ouvrir », « Marquer comme lu » et « Archiver ». Les bulles s'empilent, suivent l'onglet affiché et se ferment seules (durée réglable, en pause au survol ou quand le navigateur n'est pas au premier plan). Autres styles au choix : petite fenêtre séparée, notification du système, ou bulle + système.
 - Fenêtre de **800 × 600 px**, le maximum permis par Chrome pour une extension.
 - **Lecture** d'une conversation directement dans la fenêtre, images distantes masquées par défaut (protection contre le pistage).

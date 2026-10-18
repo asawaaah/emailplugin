@@ -1,3 +1,38 @@
+// src/lib/colors.ts
+var ACCOUNT_PALETTE = [
+  { hex: "#1a73e8", label: "colorBlue" },
+  { hex: "#188038", label: "colorGreen" },
+  { hex: "#e8710a", label: "colorOrange" },
+  { hex: "#9334e6", label: "colorPurple" },
+  { hex: "#129eaf", label: "colorTeal" },
+  { hex: "#d01884", label: "colorPink" },
+  { hex: "#d93025", label: "colorRed" },
+  { hex: "#f9ab00", label: "colorYellow" },
+  { hex: "#8d6e63", label: "colorBrown" },
+  { hex: "#5f6368", label: "colorGrey" }
+];
+var DEFAULT_COUNT = 6;
+var HEX = /^#[0-9a-f]{6}$/i;
+function isHexColor(value) {
+  return typeof value === "string" && HEX.test(value);
+}
+function defaultAccountColor(rank) {
+  const index = (rank % DEFAULT_COUNT + DEFAULT_COUNT) % DEFAULT_COUNT;
+  return ACCOUNT_PALETTE[index]?.hex ?? "#1a73e8";
+}
+function accountColor(account, rank) {
+  return isHexColor(account?.color) ? account.color.toLowerCase() : defaultAccountColor(rank);
+}
+function readableTextOn(hex) {
+  if (!isHexColor(hex)) return "#ffffff";
+  const channel = (i) => {
+    const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  const luminance = 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5);
+  return luminance > 0.36 ? "#1f1f1f" : "#ffffff";
+}
+
 // src/lib/dom.ts
 function h(tag, attrs = {}, ...children) {
   const el = document.createElement(tag);
@@ -66,14 +101,15 @@ function avatarHue(seed) {
   for (const char of seed) hash = hash * 31 + char.charCodeAt(0) >>> 0;
   return hash % 360;
 }
-var ACCOUNT_HUES = [217, 142, 28, 280, 180, 335];
-function accountHue(rank) {
-  return ACCOUNT_HUES[(rank % ACCOUNT_HUES.length + ACCOUNT_HUES.length) % ACCOUNT_HUES.length] ?? 217;
-}
-function avatar(name, seed, hue) {
+function avatar(name, seed, color) {
   const letter = (name.trim()[0] ?? "?").toUpperCase();
   const el = h("span", { class: "avatar", "aria-hidden": "true" }, letter);
-  el.style.setProperty("--hue", String(hue ?? avatarHue(seed)));
+  if (color && isHexColor(color)) {
+    el.style.background = color;
+    el.style.color = readableTextOn(color);
+  } else {
+    el.style.setProperty("--hue", String(avatarHue(seed)));
+  }
   return el;
 }
 
@@ -408,7 +444,7 @@ var fr = {
   maxThreadsLabel: "Conversations affich\xE9es par compte",
   markReadLabel: "Marquer comme lu \xE0 l\u2019ouverture",
   showImagesLabel: "Toujours afficher les images (peut permettre le pistage)",
-  orderHelp: "L\u2019ordre de cette liste est celui du popup. Utilisez les fl\xE8ches pour le changer.",
+  orderHelp: "L\u2019ordre de cette liste est celui du popup. Utilisez les fl\xE8ches pour le changer, et la pastille pour choisir la couleur du compte.",
   moveUp: "Monter {0}",
   moveDown: "Descendre {0}",
   unreadOnlyLabel: "N\u2019afficher que les courriels non lus (par d\xE9faut)",
@@ -427,6 +463,18 @@ var fr = {
   notifPositionLabel: "Position",
   positionBottomRight: "En bas \xE0 droite",
   positionTopRight: "En haut \xE0 droite",
+  colorOf: "Couleur de {0}",
+  customColor: "Personnalis\xE9e",
+  colorBlue: "Bleu",
+  colorGreen: "Vert",
+  colorOrange: "Orange",
+  colorPurple: "Violet",
+  colorTeal: "Sarcelle",
+  colorPink: "Rose",
+  colorRed: "Rouge",
+  colorYellow: "Jaune",
+  colorBrown: "Brun",
+  colorGrey: "Gris",
   privacyNote: "Vos courriels ne quittent jamais votre navigateur : l\u2019extension parle directement \xE0 Google, sans serveur interm\xE9diaire."
 };
 var en = {
@@ -512,7 +560,7 @@ var en = {
   maxThreadsLabel: "Conversations shown per account",
   markReadLabel: "Mark as read when opened",
   showImagesLabel: "Always show images (may allow tracking)",
-  orderHelp: "The order of this list is the order in the popup. Use the arrows to change it.",
+  orderHelp: "The order of this list is the order in the popup. Use the arrows to change it, and the dot to pick the account\u2019s color.",
   moveUp: "Move {0} up",
   moveDown: "Move {0} down",
   unreadOnlyLabel: "Show unread messages only (default)",
@@ -531,6 +579,18 @@ var en = {
   notifPositionLabel: "Position",
   positionBottomRight: "Bottom right",
   positionTopRight: "Top right",
+  colorOf: "Color of {0}",
+  customColor: "Custom",
+  colorBlue: "Blue",
+  colorGreen: "Green",
+  colorOrange: "Orange",
+  colorPurple: "Purple",
+  colorTeal: "Teal",
+  colorPink: "Pink",
+  colorRed: "Red",
+  colorYellow: "Yellow",
+  colorBrown: "Brown",
+  colorGrey: "Grey",
   privacyNote: "Your messages never leave your browser: the extension talks directly to Google, with no server in between."
 };
 var dictionaries = { fr, en };
@@ -725,7 +785,7 @@ function renderSection(section) {
       title: t(section.collapsed ? "expand" : "collapse", section.email)
     },
     h("span", { class: "chevron" }, icon("expandMore")),
-    avatar(section.email, section.email, accountHue(section.rank)),
+    avatar(section.email, section.email, section.color),
     h(
       "span",
       { class: "section-title" },
@@ -784,14 +844,14 @@ function renderThreadRow(section, thread) {
       role: "button",
       "aria-label": `${thread.from.name} \u2014 ${thread.subject || t("noSubject")}`
     },
-    h("span", { class: "thread-from" }, h("span", { class: "thread-name" }, thread.from.name), count),
     h(
       "div",
-      { class: "thread-text" },
-      h("div", { class: "thread-subject" }, thread.subject || t("noSubject")),
-      h("div", { class: "thread-snippet" }, thread.snippet)
+      { class: "thread-top" },
+      h("span", { class: "thread-from" }, h("span", { class: "thread-name" }, thread.from.name), count),
+      h("span", { class: "thread-date" }, formatShortDate(thread.date))
     ),
-    h("span", { class: "thread-date" }, formatShortDate(thread.date)),
+    h("div", { class: "thread-subject" }, thread.subject || t("noSubject")),
+    thread.snippet ? h("div", { class: "thread-snippet" }, thread.snippet) : "",
     h(
       "div",
       { class: "thread-actions" },
@@ -1043,7 +1103,8 @@ async function init() {
     listView.append(emptyState(t("welcomeTitle"), t("welcomeText"), t("addAccount"), () => void addAccount()));
     return;
   }
-  for (const [rank, { email }] of accounts.entries()) {
+  for (const [rank, account] of accounts.entries()) {
+    const { email } = account;
     const el = h("section", { class: "account-section", "aria-label": email });
     const section = {
       email,
@@ -1051,7 +1112,7 @@ async function init() {
       threads: [],
       unread: states[email]?.unread ?? null,
       collapsed: collapsed.has(email),
-      rank,
+      color: accountColor(account, rank),
       el
     };
     sections.set(email, section);

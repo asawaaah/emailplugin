@@ -1,9 +1,10 @@
 // Page de réglages : identifiant client Google, comptes, préférences.
 
-import { accountHue, avatar, h, iconButton } from '../lib/dom';
+import { ACCOUNT_PALETTE, accountColor } from '../lib/colors';
+import { avatar, h, iconButton } from '../lib/dom';
 import { setLanguage, t, type MessageKey } from '../lib/i18n';
 import { RemoteError, send } from '../lib/messages';
-import { MAX_THREADS_CHOICES, NOTIFICATION_SECONDS_CHOICES, POLL_CHOICES, getAccounts, getSettings, moveAccount, saveAccounts, saveSettings } from '../lib/storage';
+import { MAX_THREADS_CHOICES, NOTIFICATION_SECONDS_CHOICES, POLL_CHOICES, getAccounts, getSettings, moveAccount, saveAccounts, saveSettings, setAccountColor } from '../lib/storage';
 import type { Language, NotificationPosition, NotificationStyle, Settings } from '../lib/types';
 
 const app = document.getElementById('app') as HTMLElement;
@@ -76,6 +77,48 @@ function reorderButton(name: 'arrowUp' | 'arrowDown', label: string, index: numb
   return button;
 }
 
+/** Compte dont la palette de couleurs est ouverte. */
+let openPalette: string | null = null;
+
+function colorButton(email: string, color: string): HTMLElement {
+  const button = h('button', {
+    type: 'button',
+    class: 'color-button',
+    title: t('colorOf', email),
+    'aria-label': t('colorOf', email),
+    'aria-expanded': String(openPalette === email),
+  });
+  button.style.setProperty('--swatch', color);
+  button.addEventListener('click', () => {
+    openPalette = openPalette === email ? null : email;
+    void render().then(() => document.querySelector<HTMLElement>('.palette .swatch[aria-pressed="true"], .palette .swatch')?.focus());
+  });
+  return button;
+}
+
+/** Palette : 10 couleurs proposées et une couleur personnalisée. */
+function palette(email: string, current: string): HTMLElement {
+  const choose = (hex: string): void => {
+    openPalette = null;
+    void setAccountColor(email, hex).then(render);
+  };
+  const swatches = ACCOUNT_PALETTE.map(({ hex, label }) => {
+    const swatch = h('button', { type: 'button', class: 'swatch', title: t(label), 'aria-label': t(label), 'aria-pressed': String(hex === current) });
+    swatch.style.setProperty('--swatch', hex);
+    swatch.addEventListener('click', () => choose(hex));
+    return swatch;
+  });
+  const customId = `custom-${email}`;
+  const custom = h('input', { id: customId, type: 'color', value: current, class: 'custom-color' });
+  custom.addEventListener('change', () => choose(custom.value));
+  return h(
+    'div',
+    { class: 'palette', role: 'group', 'aria-label': t('colorOf', email) },
+    ...swatches,
+    h('label', { class: 'custom-label', for: customId }, custom, t('customColor')),
+  );
+}
+
 async function accountsCard(settings: Settings): Promise<HTMLElement> {
   const accounts = await getAccounts();
   const feedback = status();
@@ -83,21 +126,29 @@ async function accountsCard(settings: Settings): Promise<HTMLElement> {
     ? h(
         'ul',
         { class: 'account-list' },
-        ...accounts.map(({ email }, index) =>
-          h(
+        ...accounts.map((account, index) => {
+          const { email } = account;
+          const color = accountColor(account, index);
+          return h(
             'li',
             {},
-            h('span', { class: 'account-rank' }, String(index + 1)),
-            avatar(email, email, accountHue(index)),
-            h('span', { class: 'account-email' }, email),
-            reorderButton('arrowUp', t('moveUp', email), index, -1, accounts.length),
+            h(
+              'div',
+              { class: 'account-row' },
+              h('span', { class: 'account-rank' }, String(index + 1)),
+              avatar(email, email, color),
+              h('span', { class: 'account-email' }, email),
+              colorButton(email, color),
+              reorderButton('arrowUp', t('moveUp', email), index, -1, accounts.length),
             reorderButton('arrowDown', t('moveDown', email), index, 1, accounts.length),
-            iconButton('close', t('remove'), () => {
-              if (!window.confirm(t('removeConfirm', email))) return;
-              void send({ type: 'removeAccount', email }).then(render);
-            }),
-          ),
-        ),
+              iconButton('close', t('remove'), () => {
+                if (!window.confirm(t('removeConfirm', email))) return;
+                void send({ type: 'removeAccount', email }).then(render);
+              }),
+            ),
+            openPalette === email ? palette(email, color) : null,
+          );
+        }),
       )
     : h('p', { class: 'help' }, t('noAccounts'));
 

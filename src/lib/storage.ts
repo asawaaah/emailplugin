@@ -111,3 +111,13 @@ export function mergeToasts(queue: Toast[], incoming: Toast[]): Toast[] {
   const known = new Set(queue.map((t) => t.key));
   return [...incoming.filter((t) => !known.has(t.key)), ...queue].slice(0, 20);
 }
+
+/** Change la couleur d'un compte (null : revenir à la couleur par défaut). */
+export async function setAccountColor(email: string, color: string | null): Promise<void> {
+  const accounts = await getAccounts();
+  await saveAccounts(accounts.map((a) => {
+    if (a.email !== email) return a;
+    const { color: _previous, ...rest } = a;
+    return color ? { ...rest, color } : rest;
+  }));
+}

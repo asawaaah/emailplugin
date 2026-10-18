@@ -45,6 +45,8 @@ export interface Toast {
 export interface Account {
   email: string;
   addedAt: number;
+  /** Couleur choisie dans les Réglages (#rrggbb) ; sinon celle de son rang. */
+  color?: string;
 }
 
 export interface TokenEntry {

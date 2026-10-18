@@ -2,6 +2,8 @@
 // Tout texte passe par textContent : aucun contenu de courriel n'est injecté en HTML
 // dans les pages de l'extension (le corps des courriels va dans un iframe isolé).
 
+import { isHexColor, readableTextOn } from './colors';
+
 type Child = Node | string | null | undefined | false;
 type Attrs = Record<string, string | number | boolean | EventListener | undefined>;
 
@@ -83,17 +85,15 @@ export function avatarHue(seed: string): number {
   return hash % 360;
 }
 
-/** Couleurs des comptes, dans l'ordre du classement : bleu, vert, orange, violet, sarcelle, rose. */
-const ACCOUNT_HUES = [217, 142, 28, 280, 180, 335] as const;
-
-export function accountHue(rank: number): number {
-  return ACCOUNT_HUES[((rank % ACCOUNT_HUES.length) + ACCOUNT_HUES.length) % ACCOUNT_HUES.length] ?? 217;
-}
-
-/** Pastille avec l'initiale ; `hue` impose la couleur (comptes), sinon elle découle de `seed`. */
-export function avatar(name: string, seed: string, hue?: number): HTMLElement {
+/** Pastille avec l'initiale ; `color` impose la couleur (comptes), sinon elle découle de `seed`. */
+export function avatar(name: string, seed: string, color?: string): HTMLElement {
   const letter = (name.trim()[0] ?? '?').toUpperCase();
   const el = h('span', { class: 'avatar', 'aria-hidden': 'true' }, letter);
-  el.style.setProperty('--hue', String(hue ?? avatarHue(seed)));
+  if (color && isHexColor(color)) {
+    el.style.background = color;
+    el.style.color = readableTextOn(color);
+  } else {
+    el.style.setProperty('--hue', String(avatarHue(seed)));
+  }
   return el;
 }

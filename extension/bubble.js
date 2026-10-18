@@ -1,3 +1,32 @@
+// src/lib/colors.ts
+var ACCOUNT_PALETTE = [
+  { hex: "#1a73e8", label: "colorBlue" },
+  { hex: "#188038", label: "colorGreen" },
+  { hex: "#e8710a", label: "colorOrange" },
+  { hex: "#9334e6", label: "colorPurple" },
+  { hex: "#129eaf", label: "colorTeal" },
+  { hex: "#d01884", label: "colorPink" },
+  { hex: "#d93025", label: "colorRed" },
+  { hex: "#f9ab00", label: "colorYellow" },
+  { hex: "#8d6e63", label: "colorBrown" },
+  { hex: "#5f6368", label: "colorGrey" }
+];
+var DEFAULT_COUNT = 6;
+var HEX = /^#[0-9a-f]{6}$/i;
+function isHexColor(value) {
+  return typeof value === "string" && HEX.test(value);
+}
+function defaultAccountColor(rank) {
+  const index = (rank % DEFAULT_COUNT + DEFAULT_COUNT) % DEFAULT_COUNT;
+  return ACCOUNT_PALETTE[index]?.hex ?? "#1a73e8";
+}
+function accountColor(account, rank) {
+  return isHexColor(account?.color) ? account.color.toLowerCase() : defaultAccountColor(rank);
+}
+function accountColors(accounts) {
+  return new Map(accounts.map((a, rank) => [a.email, accountColor(a, rank)]));
+}
+
 // src/lib/dom.ts
 function h(tag, attrs = {}, ...children) {
   const el = document.createElement(tag);
@@ -60,10 +89,6 @@ function iconButton(name, label, onClick, extraClass = "") {
     onClick(event);
   });
   return button;
-}
-var ACCOUNT_HUES = [217, 142, 28, 280, 180, 335];
-function accountHue(rank) {
-  return ACCOUNT_HUES[(rank % ACCOUNT_HUES.length + ACCOUNT_HUES.length) % ACCOUNT_HUES.length] ?? 217;
 }
 
 // src/lib/i18n.ts
@@ -151,7 +176,7 @@ var fr = {
   maxThreadsLabel: "Conversations affich\xE9es par compte",
   markReadLabel: "Marquer comme lu \xE0 l\u2019ouverture",
   showImagesLabel: "Toujours afficher les images (peut permettre le pistage)",
-  orderHelp: "L\u2019ordre de cette liste est celui du popup. Utilisez les fl\xE8ches pour le changer.",
+  orderHelp: "L\u2019ordre de cette liste est celui du popup. Utilisez les fl\xE8ches pour le changer, et la pastille pour choisir la couleur du compte.",
   moveUp: "Monter {0}",
   moveDown: "Descendre {0}",
   unreadOnlyLabel: "N\u2019afficher que les courriels non lus (par d\xE9faut)",
@@ -170,6 +195,18 @@ var fr = {
   notifPositionLabel: "Position",
   positionBottomRight: "En bas \xE0 droite",
   positionTopRight: "En haut \xE0 droite",
+  colorOf: "Couleur de {0}",
+  customColor: "Personnalis\xE9e",
+  colorBlue: "Bleu",
+  colorGreen: "Vert",
+  colorOrange: "Orange",
+  colorPurple: "Violet",
+  colorTeal: "Sarcelle",
+  colorPink: "Rose",
+  colorRed: "Rouge",
+  colorYellow: "Jaune",
+  colorBrown: "Brun",
+  colorGrey: "Gris",
   privacyNote: "Vos courriels ne quittent jamais votre navigateur : l\u2019extension parle directement \xE0 Google, sans serveur interm\xE9diaire."
 };
 var en = {
@@ -255,7 +292,7 @@ var en = {
   maxThreadsLabel: "Conversations shown per account",
   markReadLabel: "Mark as read when opened",
   showImagesLabel: "Always show images (may allow tracking)",
-  orderHelp: "The order of this list is the order in the popup. Use the arrows to change it.",
+  orderHelp: "The order of this list is the order in the popup. Use the arrows to change it, and the dot to pick the account\u2019s color.",
   moveUp: "Move {0} up",
   moveDown: "Move {0} down",
   unreadOnlyLabel: "Show unread messages only (default)",
@@ -274,6 +311,18 @@ var en = {
   notifPositionLabel: "Position",
   positionBottomRight: "Bottom right",
   positionTopRight: "Top right",
+  colorOf: "Color of {0}",
+  customColor: "Custom",
+  colorBlue: "Blue",
+  colorGreen: "Green",
+  colorOrange: "Orange",
+  colorPurple: "Purple",
+  colorTeal: "Teal",
+  colorPink: "Pink",
+  colorRed: "Red",
+  colorYellow: "Yellow",
+  colorBrown: "Brown",
+  colorGrey: "Grey",
   privacyNote: "Your messages never leave your browser: the extension talks directly to Google, with no server in between."
 };
 var dictionaries = { fr, en };
@@ -350,7 +399,7 @@ async function startToastView(app2, host) {
   const settings = await getSettings();
   setLanguage(settings.language);
   document.title = t("toastTitle");
-  const ranks = new Map((await getAccounts()).map((a, i) => [a.email, i]));
+  const colors = accountColors(await getAccounts());
   let toasts = await getToasts();
   const deadlines = /* @__PURE__ */ new Map();
   const shown = /* @__PURE__ */ new Set();
@@ -403,7 +452,7 @@ async function startToastView(app2, host) {
       tabindex: 0,
       "aria-label": `${toast.email} \u2014 ${toast.subject || t("noSubject")}`
     });
-    card.style.setProperty("--hue", String(accountHue(ranks.get(toast.email) ?? 0)));
+    card.style.setProperty("--account", colors.get(toast.email) ?? "#1a73e8");
     const deadline = deadlines.get(toast.key);
     let progress = null;
     if (deadline !== void 0 && settings.notificationSeconds > 0) {
@@ -415,16 +464,17 @@ async function startToastView(app2, host) {
       progress = h("div", { class: "toast-progress" }, bar);
     }
     card.append(
+      // Expéditeur (1 ligne), objet (1 ligne), aperçu (2 lignes), puis le compte destinataire.
       h(
         "div",
         { class: "toast-head" },
-        h("span", { class: "toast-account" }, h("span", { class: "account-dot", "aria-hidden": "true" }), toast.email),
+        h("span", { class: "toast-from" }, toast.from.name),
         h("span", { class: "toast-time" }, relativeTime(toast.date)),
         iconButton("close", t("dismiss"), () => dismiss([toast.key]), "small")
       ),
-      h("div", { class: "toast-from" }, toast.from.name),
       h("div", { class: "toast-subject" }, toast.subject || t("noSubject")),
       toast.snippet ? h("div", { class: "toast-snippet" }, toast.snippet) : "",
+      h("div", { class: "toast-account" }, h("span", { class: "account-dot", "aria-hidden": "true" }), toast.email),
       toast.threadId ? h(
         "div",
         { class: "toast-actions" },

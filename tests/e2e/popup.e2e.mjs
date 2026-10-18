@@ -216,10 +216,22 @@ await options.waitForSelector('.account-list li');
 assert.equal(await options.locator('#redirect-uri').inputValue(), `https://${extensionId}.chromiumapp.org/`);
 await options.getByRole('button', { name: 'Monter bob.travail@gmail.com' }).click();
 await options.waitForFunction(() => document.querySelector('.account-list li .account-email')?.textContent === 'bob.travail@gmail.com');
+// Couleur d'un compte : palette ouverte par la pastille, choix « Rouge »
+await options.getByRole('button', { name: 'Couleur de alice@gmail.com' }).click();
+await options.waitForSelector('.palette');
 await options.screenshot({ path: `${OUT}/7-options${suffix}.png`, fullPage: true });
+await options.getByRole('button', { name: 'Rouge', exact: true }).click();
+await options.waitForFunction(() => !document.querySelector('.palette'));
+const aliceAvatar = () => options.locator('.account-list li', { hasText: 'alice@gmail.com' }).locator('.avatar').evaluate((el) => getComputedStyle(el).backgroundColor);
+assert.equal(await aliceAvatar(), 'rgb(217, 48, 37)', 'pastille rouge dans les réglages');
 await page.goto(popupUrl);
 await page.waitForSelector('.account-section');
 assert.equal(await sections.nth(0).getAttribute('aria-label'), 'bob.travail@gmail.com', 'bob passe en premier');
+// La section est redessinée au chargement : on attend la pastille finale.
+await page.waitForFunction(() => {
+  const avatar = document.querySelectorAll('.account-section')[1]?.querySelector('.avatar');
+  return avatar && getComputedStyle(avatar).backgroundColor === 'rgb(217, 48, 37)';
+}, null, { timeout: 5000 }); // alice en rouge dans la liste
 
 // 9. Notifications : rien au premier passage, puis une bulle dans l'onglet ouvert
 const refresh = () => page.evaluate(() => chrome.runtime.sendMessage({ type: 'refresh' }));
@@ -300,6 +312,7 @@ assert.equal(await systemCount(), 0, 'pas de notification du système quand la b
 // Sécurité : le contenu des courriels n'entre jamais dans la page du site.
 assert.equal(await site.evaluate(() => document.documentElement.outerHTML.includes('Hydro')), false, 'rien dans la page du site');
 assert.equal(await site.evaluate(() => document.querySelector('apercu-gmail-bubble')?.shadowRoot ?? null), null, 'cadre caché au site');
+assert.equal(await bubbleFrame(site).locator('.toast-card').first().evaluate((el) => el.style.getPropertyValue('--account')), '#d93025', 'bulle aux couleurs du compte');
 await site.screenshot({ path: `${OUT}/8-bulle-onglet${suffix}.png` });
 
 // Deux autres courriels, sur les deux comptes : les bulles s'empilent
