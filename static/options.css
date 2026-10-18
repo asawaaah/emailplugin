@@ -45,3 +45,4 @@ input[readonly] { background: var(--surface); }
 .icon-button.invisible { visibility: hidden; }
 .notif-test { margin-top: 16px; }
 .notif-test .help { margin: 8px 0 0; font-size: 13px; }
+.field-help { margin: 4px 0 0; font-size: 13px; }

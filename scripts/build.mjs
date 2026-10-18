@@ -24,9 +24,17 @@ await rm(outdir, { recursive: true, force: true });
 await mkdir(outdir, { recursive: true });
 await cp('static', outdir, { recursive: true });
 
+// Bulle injectée dans les pages : script classique (IIFE), pas un module.
+const contentOptions = {
+  ...options,
+  entryPoints: { 'toast-content': 'src/content/toast.ts' },
+  format: 'iife',
+};
+
 if (watch) {
-  const ctx = await context(options);
-  await ctx.watch();
+  await (await context(options)).watch();
+  await (await context(contentOptions)).watch();
 } else {
   await build(options);
+  await build(contentOptions);
 }

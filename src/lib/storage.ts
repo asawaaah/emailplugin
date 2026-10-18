@@ -14,9 +14,9 @@ export const DEFAULT_SETTINGS: Settings = {
   alwaysShowImages: false,
   unreadOnly: true,
   notifications: true,
-  notificationStyle: 'window',
+  notificationStyle: 'tab',
   notificationSeconds: 8,
-  notificationPosition: 'bottom-right',
+  notificationPosition: 'top-right',
 };
 
 export const NOTIFICATION_SECONDS_CHOICES = [5, 8, 15, 30, 0] as const;

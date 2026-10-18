@@ -216,13 +216,18 @@ var DEFAULT_SETTINGS = {
   alwaysShowImages: false,
   unreadOnly: true,
   notifications: true,
-  notificationStyle: "window",
+  notificationStyle: "tab",
   notificationSeconds: 8,
-  notificationPosition: "bottom-right"
+  notificationPosition: "top-right"
 };
 async function getSettings() {
   const { settings } = await chrome.storage.local.get("settings");
   return { ...DEFAULT_SETTINGS, ...settings };
+}
+async function saveSettings(patch) {
+  const next = { ...await getSettings(), ...patch };
+  await chrome.storage.local.set({ settings: next });
+  return next;
 }
 async function getAccounts() {
   const { accounts } = await chrome.storage.local.get("accounts");
@@ -479,13 +484,15 @@ var fr = {
   notifTest: "Tester la notification",
   notifHelp: "Notification du syst\xE8me absente ? Autorisez les notifications de Google Chrome dans les r\xE9glages de votre syst\xE8me (Windows : Param\xE8tres \u203A Notifications ; Mac : R\xE9glages Syst\xE8me \u203A Notifications).",
   notifStyleLabel: "Type de notification",
-  notifStyleWindow: "Fen\xEAtre Aper\xE7u Gmail (recommand\xE9)",
+  notifStyleTab: "Bulle dans l\u2019onglet ouvert (recommand\xE9)",
+  notifStyleWindow: "Petite fen\xEAtre s\xE9par\xE9e",
   notifStyleSystem: "Notification du syst\xE8me",
-  notifStyleBoth: "Les deux",
-  notifDurationLabel: "Dur\xE9e d\u2019affichage de la fen\xEAtre",
+  notifStyleBoth: "Bulle + notification du syst\xE8me",
+  notifStyleHelp: "Sur les pages internes du navigateur (nouvel onglet, r\xE9glages, boutique), la bulle est remplac\xE9e par la notification du syst\xE8me.",
+  notifDurationLabel: "Dur\xE9e d\u2019affichage",
   secondsShort: "{0} s",
   untilClosed: "Jusqu\u2019\xE0 fermeture",
-  notifPositionLabel: "Position de la fen\xEAtre",
+  notifPositionLabel: "Position",
   positionBottomRight: "En bas \xE0 droite",
   positionTopRight: "En haut \xE0 droite",
   privacyNote: "Vos courriels ne quittent jamais votre navigateur : l\u2019extension parle directement \xE0 Google, sans serveur interm\xE9diaire."
@@ -581,13 +588,15 @@ var en = {
   notifTest: "Test notification",
   notifHelp: "No system notification? Allow Google Chrome notifications in your system settings (Windows: Settings \u203A Notifications; Mac: System Settings \u203A Notifications).",
   notifStyleLabel: "Notification type",
-  notifStyleWindow: "Gmail Preview window (recommended)",
+  notifStyleTab: "Bubble in the open tab (recommended)",
+  notifStyleWindow: "Small separate window",
   notifStyleSystem: "System notification",
-  notifStyleBoth: "Both",
-  notifDurationLabel: "Window display time",
+  notifStyleBoth: "Bubble + system notification",
+  notifStyleHelp: "On the browser\u2019s internal pages (new tab, settings, store), the bubble is replaced by the system notification.",
+  notifDurationLabel: "Display time",
   secondsShort: "{0} s",
   untilClosed: "Until closed",
-  notifPositionLabel: "Window position",
+  notifPositionLabel: "Position",
   positionBottomRight: "Bottom right",
   positionTopRight: "Top right",
   privacyNote: "Your messages never leave your browser: the extension talks directly to Google, with no server in between."
@@ -746,8 +755,87 @@ function showToasts(items, settings) {
 }
 function dismissToasts(keys) {
   const remove = new Set(keys);
-  return serialized(async () => saveToasts((await getToasts()).filter((toast) => !remove.has(toast.key))));
+  return serialized(async () => {
+    await saveToasts((await getToasts()).filter((toast) => !remove.has(toast.key)));
+    if (await getToastTabId() !== null) await pushToTab(await getSettings());
+  });
 }
+var TOAST_MAX_AGE_MS = 15 * 60 * 1e3;
+async function getToastTabId() {
+  const { toastTabId } = await chrome.storage.session.get("toastTabId");
+  return typeof toastTabId === "number" ? toastTabId : null;
+}
+async function setToastTabId(id) {
+  await chrome.storage.session.set({ toastTabId: id });
+}
+async function activeTab() {
+  const browser = await chrome.windows.getLastFocused({ windowTypes: ["normal"], populate: true }).catch(() => void 0);
+  return browser?.tabs?.find((tab) => tab.active);
+}
+function sendToTab(tabId, message) {
+  return chrome.tabs.sendMessage(tabId, message);
+}
+async function pushToTab(settings) {
+  const all = await getToasts();
+  const queue = all.filter((toast) => Date.now() - toast.date < TOAST_MAX_AGE_MS);
+  if (queue.length !== all.length) await saveToasts(queue);
+  const previous = await getToastTabId();
+  const tab = await activeTab();
+  const target = tab?.id;
+  if (previous !== null && (previous !== target || !queue.length)) {
+    await sendToTab(previous, { type: "clearToasts" }).catch(() => void 0);
+  }
+  if (!queue.length) {
+    await setToastTabId(null);
+    return true;
+  }
+  if (target === void 0) {
+    await setToastTabId(null);
+    return false;
+  }
+  const accounts = await getAccounts();
+  const options = {
+    seconds: settings.notificationSeconds,
+    position: settings.notificationPosition,
+    language: settings.language,
+    ranks: Object.fromEntries(accounts.map((a, i) => [a.email, i]))
+  };
+  try {
+    await chrome.scripting.executeScript({ target: { tabId: target }, files: ["toast-content.js"] });
+    await sendToTab(target, { type: "renderToasts", toasts: queue, options });
+    await setToastTabId(target);
+    return true;
+  } catch {
+    await setToastTabId(null);
+    return false;
+  }
+}
+function showInTab(items, settings) {
+  if (!items.length) return Promise.resolve(true);
+  return serialized(async () => {
+    await saveToasts(mergeToasts(await getToasts(), items));
+    const shown = await pushToTab(settings);
+    if (!shown) {
+      const keys = new Set(items.map((x) => x.key));
+      await saveToasts((await getToasts()).filter((x) => !keys.has(x.key)));
+    }
+    return shown;
+  });
+}
+function followActiveTab() {
+  void serialized(async () => {
+    if (!(await getToasts()).length) return;
+    const settings = await getSettings();
+    if (settings.notificationStyle === "tab" || settings.notificationStyle === "both") await pushToTab(settings);
+  });
+}
+chrome.tabs.onActivated.addListener(followActiveTab);
+chrome.windows.onFocusChanged.addListener((windowId) => {
+  if (windowId !== chrome.windows.WINDOW_ID_NONE) followActiveTab();
+});
+chrome.tabs.onUpdated.addListener((_tabId, info, tab) => {
+  if (info.status === "complete" && tab.active) followActiveTab();
+});
 chrome.windows.onRemoved.addListener((windowId) => {
   void serialized(async () => {
     if (await getToastWindowIdRaw() !== windowId) return;
@@ -765,14 +853,20 @@ async function openInGmail(email, threadId) {
   await chrome.tabs.create({ url, windowId: browser.id, active: true });
   await chrome.windows.update(browser.id, { focused: true });
 }
-async function announce(email, messages, settings) {
-  if (settings.notificationStyle !== "system") {
-    await showToasts(messages.map((m) => toToast(email, m)), settings);
+async function deliver(toasts, settings, systemNotify) {
+  const style = settings.notificationStyle;
+  if (style === "window") await showToasts(toasts, settings);
+  if (style === "tab" || style === "both") {
+    const shown = await showInTab(toasts, settings);
+    if (!shown && style === "tab") systemNotify();
   }
-  if (settings.notificationStyle !== "window") {
+  if (style === "system" || style === "both") systemNotify();
+}
+async function announce(email, messages, settings) {
+  await deliver(messages.map((m) => toToast(email, m)), settings, () => {
     if (messages.length > MAX_INDIVIDUAL) notifySummary(email, messages);
     else messages.forEach((m) => notifyMessage(email, m));
-  }
+  });
 }
 async function checkNewMessages(email, client, settings, previous) {
   const now = Date.now();
@@ -854,26 +948,24 @@ async function handle(request) {
       const settings = await getSettings();
       setLanguage(settings.language);
       const email = (await getAccounts())[0]?.email ?? "exemple@gmail.com";
-      if (settings.notificationStyle !== "system") {
-        await showToasts([{
-          key: `test|${Date.now()}`,
-          email,
-          threadId: null,
-          from: { name: t("appName"), email: "" },
-          subject: t("notifTestTitle"),
-          snippet: t("notifTestMessage"),
-          date: Date.now()
-        }], settings);
-      }
-      if (settings.notificationStyle !== "window") {
-        chrome.notifications.create(`test|${Date.now()}`, {
+      const test = {
+        key: `test|${Date.now()}`,
+        email,
+        threadId: null,
+        from: { name: t("appName"), email: "" },
+        subject: t("notifTestTitle"),
+        snippet: t("notifTestMessage"),
+        date: Date.now()
+      };
+      await deliver([test], settings, () => {
+        chrome.notifications.create(test.key, {
           type: "basic",
           iconUrl: ICON,
           title: t("notifTestTitle"),
           message: t("notifTestMessage"),
           contextMessage: email
         });
-      }
+      });
       return null;
     }
     case "threadAction": {
@@ -908,8 +1000,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === ALARM) void pollAll();
 });
+async function migrate() {
+  const { migrations } = await chrome.storage.local.get("migrations");
+  const done = new Set(migrations ?? []);
+  if (!done.has("notif-tab")) {
+    const settings = await getSettings();
+    if (settings.notificationStyle === "window") await saveSettings({ notificationStyle: "tab" });
+    done.add("notif-tab");
+  }
+  if (!done.has("notif-top-right")) {
+    const settings = await getSettings();
+    if (settings.notificationPosition === "bottom-right") await saveSettings({ notificationPosition: "top-right" });
+    done.add("notif-top-right");
+  }
+  await chrome.storage.local.set({ migrations: [...done] });
+}
 chrome.runtime.onInstalled.addListener((details) => {
-  void scheduleAlarm().then(pollAll);
+  void migrate().then(scheduleAlarm).then(pollAll);
   if (details.reason === "install") void chrome.runtime.openOptionsPage();
 });
 chrome.runtime.onStartup.addListener(() => {

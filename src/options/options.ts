@@ -161,17 +161,19 @@ function prefsCard(settings: Settings): HTMLElement {
     checkbox('show-images', t('showImagesLabel'), settings.alwaysShowImages, (alwaysShowImages) => void saveSettings({ alwaysShowImages })),
     checkbox('notifications', t('notificationsLabel'), settings.notifications, (notifications) => void saveSettings({ notifications })),
     select<NotificationStyle>('notif-style', t('notifStyleLabel'), settings.notificationStyle, [
+      { value: 'tab', label: t('notifStyleTab') },
       { value: 'window', label: t('notifStyleWindow') },
       { value: 'system', label: t('notifStyleSystem') },
       { value: 'both', label: t('notifStyleBoth') },
     ], (notificationStyle) => void saveSettings({ notificationStyle })),
+    h('p', { class: 'help field-help' }, t('notifStyleHelp')),
     select<number>('notif-seconds', t('notifDurationLabel'), settings.notificationSeconds, NOTIFICATION_SECONDS_CHOICES.map((n) => ({
       value: n,
       label: n === 0 ? t('untilClosed') : t('secondsShort', n),
     })), (notificationSeconds) => void saveSettings({ notificationSeconds })),
     select<NotificationPosition>('notif-position', t('notifPositionLabel'), settings.notificationPosition, [
-      { value: 'bottom-right', label: t('positionBottomRight') },
       { value: 'top-right', label: t('positionTopRight') },
+      { value: 'bottom-right', label: t('positionBottomRight') },
     ], (notificationPosition) => void saveSettings({ notificationPosition })),
     notificationTest(),
   );

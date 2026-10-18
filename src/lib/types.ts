@@ -18,14 +18,15 @@ export interface Settings {
   unreadOnly: boolean;
   /** Notification à chaque nouveau courriel. */
   notifications: boolean;
-  /** Fenêtre dessinée par l'extension, notification du système, ou les deux. */
+  /** Bulle dans l'onglet ouvert, petite fenêtre, notification du système, ou bulle + système. */
   notificationStyle: NotificationStyle;
   /** Durée d'affichage de la fenêtre, en secondes (0 : jusqu'à fermeture). */
   notificationSeconds: number;
   notificationPosition: NotificationPosition;
 }
 
-export type NotificationStyle = 'window' | 'system' | 'both';
+/** 'both' : bulle dans l'onglet et notification du système. */
+export type NotificationStyle = 'tab' | 'window' | 'system' | 'both';
 export type NotificationPosition = 'bottom-right' | 'top-right';
 
 /** Courriel affiché dans la fenêtre de notification. */

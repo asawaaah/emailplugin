@@ -159,13 +159,15 @@ var fr = {
   notifTest: "Tester la notification",
   notifHelp: "Notification du syst\xE8me absente ? Autorisez les notifications de Google Chrome dans les r\xE9glages de votre syst\xE8me (Windows : Param\xE8tres \u203A Notifications ; Mac : R\xE9glages Syst\xE8me \u203A Notifications).",
   notifStyleLabel: "Type de notification",
-  notifStyleWindow: "Fen\xEAtre Aper\xE7u Gmail (recommand\xE9)",
+  notifStyleTab: "Bulle dans l\u2019onglet ouvert (recommand\xE9)",
+  notifStyleWindow: "Petite fen\xEAtre s\xE9par\xE9e",
   notifStyleSystem: "Notification du syst\xE8me",
-  notifStyleBoth: "Les deux",
-  notifDurationLabel: "Dur\xE9e d\u2019affichage de la fen\xEAtre",
+  notifStyleBoth: "Bulle + notification du syst\xE8me",
+  notifStyleHelp: "Sur les pages internes du navigateur (nouvel onglet, r\xE9glages, boutique), la bulle est remplac\xE9e par la notification du syst\xE8me.",
+  notifDurationLabel: "Dur\xE9e d\u2019affichage",
   secondsShort: "{0} s",
   untilClosed: "Jusqu\u2019\xE0 fermeture",
-  notifPositionLabel: "Position de la fen\xEAtre",
+  notifPositionLabel: "Position",
   positionBottomRight: "En bas \xE0 droite",
   positionTopRight: "En haut \xE0 droite",
   privacyNote: "Vos courriels ne quittent jamais votre navigateur : l\u2019extension parle directement \xE0 Google, sans serveur interm\xE9diaire."
@@ -261,13 +263,15 @@ var en = {
   notifTest: "Test notification",
   notifHelp: "No system notification? Allow Google Chrome notifications in your system settings (Windows: Settings \u203A Notifications; Mac: System Settings \u203A Notifications).",
   notifStyleLabel: "Notification type",
-  notifStyleWindow: "Gmail Preview window (recommended)",
+  notifStyleTab: "Bubble in the open tab (recommended)",
+  notifStyleWindow: "Small separate window",
   notifStyleSystem: "System notification",
-  notifStyleBoth: "Both",
-  notifDurationLabel: "Window display time",
+  notifStyleBoth: "Bubble + system notification",
+  notifStyleHelp: "On the browser\u2019s internal pages (new tab, settings, store), the bubble is replaced by the system notification.",
+  notifDurationLabel: "Display time",
   secondsShort: "{0} s",
   untilClosed: "Until closed",
-  notifPositionLabel: "Window position",
+  notifPositionLabel: "Position",
   positionBottomRight: "Bottom right",
   positionTopRight: "Top right",
   privacyNote: "Your messages never leave your browser: the extension talks directly to Google, with no server in between."
@@ -322,9 +326,9 @@ var DEFAULT_SETTINGS = {
   alwaysShowImages: false,
   unreadOnly: true,
   notifications: true,
-  notificationStyle: "window",
+  notificationStyle: "tab",
   notificationSeconds: 8,
-  notificationPosition: "bottom-right"
+  notificationPosition: "top-right"
 };
 async function getSettings() {
   const { settings: settings2 } = await chrome.storage.local.get("settings");

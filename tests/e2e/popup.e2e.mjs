@@ -221,35 +221,97 @@ await page.goto(popupUrl);
 await page.waitForSelector('.account-section');
 assert.equal(await sections.nth(0).getAttribute('aria-label'), 'bob.travail@gmail.com', 'bob passe en premier');
 
-// 9. Notifications : rien au premier passage, puis la fenêtre Aperçu Gmail
+// 9. Notifications : rien au premier passage, puis une bulle dans l'onglet ouvert
 const refresh = () => page.evaluate(() => chrome.runtime.sendMessage({ type: 'refresh' }));
 const setSettings = (patch) => worker.evaluate(async (p) => {
   const { settings } = await chrome.storage.local.get('settings');
   await chrome.storage.local.set({ settings: { ...settings, ...p } });
 }, patch);
-const nextToastWindow = () => context.waitForEvent('page', { predicate: (p) => p.url().endsWith('/notify.html'), timeout: 10_000 });
-const isNotifyPageOpen = () => context.pages().some((p) => p.url().endsWith('/notify.html') && !p.isClosed());
+const systemCount = async () => (await worker.evaluate(() => globalThis.__notifications)).length;
+
+// Faux sites web, avec une politique de sécurité très stricte (la bulle doit s'afficher quand même).
+await context.route('https://site.exemple/**', (route) => route.fulfill({
+  status: 200,
+  contentType: 'text/html; charset=utf-8',
+  headers: { 'Content-Security-Policy': "default-src 'none'; style-src 'none'; script-src 'none'" },
+  body: `<!doctype html><html><body style="margin:0;font:16px sans-serif">
+    <header style="background:#24292f;color:#fff;padding:16px 24px;font-size:20px">Un site quelconque — ${new URL(route.request().url()).pathname}</header>
+    <main style="padding:24px;line-height:1.6">${'<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.</p>'.repeat(8)}</main>
+  </body></html>`,
+}));
+
+// Lecture du contenu de la bulle (Shadow DOM fermé) par le protocole de débogage.
+async function bubble(p) {
+  const cdp = await context.newCDPSession(p);
+  try {
+    const { root } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true });
+    const find = (n) => (n.nodeName === 'APERCU-GMAIL-TOASTS' ? n : (n.children ?? []).map(find).find(Boolean));
+    const host = find(root);
+    const stack = host?.shadowRoots?.[0]?.children?.find((c) => c.nodeName === 'DIV');
+    if (!stack) return null;
+    const { outerHTML } = await cdp.send('DOM.getOuterHTML', { nodeId: stack.nodeId });
+    const { nodeIds: cards } = await cdp.send('DOM.querySelectorAll', { nodeId: stack.nodeId, selector: 'article.card' });
+    const text = outerHTML.replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ');
+    return { text, cards: cards.length };
+  } finally {
+    await cdp.detach();
+  }
+}
+async function clickInBubble(p, cardText, buttonText) {
+  const cdp = await context.newCDPSession(p);
+  try {
+    const { root } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true });
+    const find = (n) => (n.nodeName === 'APERCU-GMAIL-TOASTS' ? n : (n.children ?? []).map(find).find(Boolean));
+    const shadow = find(root).shadowRoots[0];
+    const { nodeIds: cards } = await cdp.send('DOM.querySelectorAll', { nodeId: shadow.nodeId, selector: cardText ? 'article.card' : '.footer' });
+    for (const card of cards) {
+      if (cardText && !(await cdp.send('DOM.getOuterHTML', { nodeId: card })).outerHTML.includes(cardText)) continue;
+      const { nodeIds: buttons } = await cdp.send('DOM.querySelectorAll', { nodeId: card, selector: 'button' });
+      for (const button of buttons) {
+        if (!(await cdp.send('DOM.getOuterHTML', { nodeId: button })).outerHTML.includes(buttonText)) continue;
+        const { model } = await cdp.send('DOM.getBoxModel', { nodeId: button });
+        const [x1, y1, , , x3, y3] = model.content;
+        await p.mouse.click((x1 + x3) / 2, (y1 + y3) / 2);
+        return;
+      }
+    }
+    throw new Error(`bouton « ${buttonText} » introuvable`);
+  } finally {
+    await cdp.detach();
+  }
+}
+const waitFor = async (check, label, timeout = 8000) => {
+  const start = Date.now();
+  for (;;) {
+    if (await check()) return;
+    if (Date.now() - start > timeout) throw new Error(`délai dépassé : ${label}`);
+    await new Promise((r) => setTimeout(r, 150));
+  }
+};
 
 await refresh();
-assert.equal(isNotifyPageOpen(), false, 'aucune fenêtre pour les courriels déjà là');
+assert.equal(await systemCount(), 0, 'rien pour les courriels déjà là');
+
+const site = await context.newPage();
+site.on('pageerror', (e) => errors.push(`site: ${e.message}`));
+await site.goto('https://site.exemple/article');
+await site.bringToFront();
+assert.equal(await bubble(site), null);
+
 mailbox['alice@gmail.com'].unshift({
   id: 't9',
   messages: [msg('m9', 't9', 'Hydro-Québec <factures@hydro.qc.ca>', 'Votre facture est prête', 'Montant à payer : 84,12 $. Échéance le 3 novembre.', 0, true)],
 });
-let toastPromise = nextToastWindow();
 await refresh();
-let toastPage = await toastPromise;
-toastPage.on('pageerror', (e) => errors.push(`notify: ${e.message}`));
-await toastPage.setViewportSize({ width: 400, height: 520 }); // taille réelle de la fenêtre
-await toastPage.waitForSelector('.toast-card');
-const cardText = await toastPage.locator('.toast-card').innerText();
+await waitFor(async () => (await bubble(site))?.cards === 1, 'bulle affichée dans l’onglet');
+const first = await bubble(site);
 for (const expected of ['alice@gmail.com', 'Hydro-Québec', 'Votre facture est prête', 'Montant à payer : 84,12 $']) {
-  assert.ok(cardText.includes(expected), `la carte affiche « ${expected} »`);
+  assert.ok(first.text.includes(expected), `la bulle affiche « ${expected} »`);
 }
-assert.deepEqual(await worker.evaluate(() => globalThis.__notifications), [], 'pas de notification du système par défaut');
-await toastPage.screenshot({ path: `${OUT}/8-notification${suffix}.png` });
+assert.equal(await systemCount(), 0, 'pas de notification du système quand la bulle s’affiche');
+await site.screenshot({ path: `${OUT}/8-bulle-onglet${suffix}.png` });
 
-// Deux autres courriels, sur les deux comptes : les cartes s'empilent
+// Deux autres courriels, sur les deux comptes : les bulles s'empilent
 mailbox['bob.travail@gmail.com'].unshift({
   id: 'b9',
   messages: [msg('n9', 'b9', 'Julie Gagnon <julie@client.ca>', 'Contrat signé', 'Bonne nouvelle : le client a signé ce matin, je t’envoie le PDF.', 0, true)],
@@ -259,40 +321,76 @@ mailbox['alice@gmail.com'].unshift({
   messages: [msg('m8', 't8', 'Marie Tremblay <marie@exemple.ca>', 'Photos du souper', 'Voici les photos de vendredi, on remet ça bientôt !', 0, true)],
 });
 await refresh();
-await toastPage.waitForFunction(() => document.querySelectorAll('.toast-card').length === 3);
-await toastPage.waitForTimeout(300);
-await toastPage.screenshot({ path: `${OUT}/9-notifications-empilees${suffix}.png` });
+await waitFor(async () => (await bubble(site))?.cards === 3, 'trois bulles empilées');
+await site.waitForTimeout(300);
+await site.screenshot({ path: `${OUT}/9-bulles-empilees${suffix}.png` });
 await refresh();
-assert.equal(await toastPage.locator('.toast-card').count(), 3, 'pas de doublon');
+assert.equal((await bubble(site)).cards, 3, 'pas de doublon');
 
-// Actions : « Marquer comme lu » appelle Gmail et retire la carte ; « Tout fermer » ferme la fenêtre
-await toastPage.locator('.toast-card', { hasText: 'Hydro-Québec' }).getByRole('button', { name: 'Marquer comme lu' }).click();
-await toastPage.waitForFunction(() => document.querySelectorAll('.toast-card').length === 2);
+// « Marquer comme lu » dans la bulle : appel à Gmail, bulle retirée
+await clickInBubble(site, 'Hydro-Québec', 'Marquer comme lu');
+await waitFor(async () => (await bubble(site))?.cards === 2, 'bulle retirée après action');
 assert.ok(calls.includes('POST alice@gmail.com /threads/t9/modify'));
-await Promise.all([toastPage.waitForEvent('close'), toastPage.getByRole('button', { name: 'Tout fermer' }).click()]);
 
-// Fermeture automatique après la durée choisie
+// La bulle suit l'onglet affiché
+const site2 = await context.newPage();
+await site2.goto('https://site.exemple/autre-page');
+await site2.bringToFront();
+await waitFor(async () => (await bubble(site2))?.cards === 2, 'la bulle passe au nouvel onglet');
+await waitFor(async () => (await bubble(site)) === null, 'et quitte l’ancien');
+
+// Page interne du navigateur : repli sur la notification du système
+const internal = await context.newPage();
+await internal.goto('chrome://version');
+await internal.bringToFront();
+await internal.waitForTimeout(300);
+mailbox['bob.travail@gmail.com'].unshift({
+  id: 'b8',
+  messages: [msg('n8', 'b8', 'Service client <aide@boutique.ca>', 'Commande expédiée', 'Votre colis arrivera jeudi.', 0, true)],
+});
+await refresh();
+await waitFor(async () => (await systemCount()) === 1, 'notification du système sur une page interne');
+const fallback = (await worker.evaluate(() => globalThis.__notifications))[0];
+assert.equal(fallback.title, 'Commande expédiée');
+assert.equal(fallback.contextMessage, 'bob.travail@gmail.com · De : Service client');
+await internal.close();
+
+// « Tout fermer », puis fermeture automatique après la durée choisie
+await site2.bringToFront();
+await waitFor(async () => (await bubble(site2))?.cards === 2, 'bulles de retour sur l’onglet');
+await clickInBubble(site2, null, 'Tout fermer');
+await waitFor(async () => (await bubble(site2)) === null, 'tout fermé');
 await setSettings({ notificationSeconds: 5 });
-toastPromise = nextToastWindow();
 await page.evaluate(() => chrome.runtime.sendMessage({ type: 'testNotification' }));
-toastPage = await toastPromise;
-await toastPage.waitForSelector('.toast-card');
-assert.match(await toastPage.locator('.toast-card').innerText(), /Notification de test/);
-await toastPage.waitForEvent('close', { timeout: 9000 });
+await waitFor(async () => (await bubble(site2))?.text.includes('Notification de test'), 'bulle de test');
+// Souris sur la bulle : le compte à rebours s'arrête ; il reprend quand elle s'éloigne.
+await site2.mouse.move(600, 60); // bulle en haut à droite
+await site2.waitForTimeout(5500);
+assert.ok((await bubble(site2))?.text.includes('Notification de test'), 'en pause pendant le survol');
+await site2.mouse.move(20, 20);
+await waitFor(async () => (await bubble(site2)) === null, 'fermeture automatique', 10_000);
 
-// Style « Notification du système » : plus de fenêtre, notification classique
+// Style « Petite fenêtre séparée » : toujours disponible
+await setSettings({ notificationStyle: 'window' });
+const windowPromise = context.waitForEvent('page', { predicate: (p) => p.url().endsWith('/notify.html'), timeout: 10_000 });
+await page.evaluate(() => chrome.runtime.sendMessage({ type: 'testNotification' }));
+const toastPage = await windowPromise;
+await toastPage.waitForSelector('.toast-card');
+await toastPage.waitForEvent('close', { timeout: 10_000 });
+
+// Style « Notification du système »
 await setSettings({ notificationStyle: 'system' });
 mailbox['alice@gmail.com'].unshift({
   id: 't7',
   messages: [msg('m7', 't7', 'Banque <alertes@banque.ca>', 'Dépôt reçu', 'Un dépôt de 1 250,00 $ a été effectué dans votre compte.', 0, true)],
 });
 await refresh();
-const notifications = await worker.evaluate(() => globalThis.__notifications);
-assert.equal(notifications.length, 1);
-assert.equal(notifications[0].title, 'Dépôt reçu');
-assert.equal(notifications[0].contextMessage, 'alice@gmail.com · De : Banque');
-assert.equal(notifications[0].id, 'msg|alice@gmail.com|t7');
-assert.equal(isNotifyPageOpen(), false);
+await waitFor(async () => (await systemCount()) === 2, 'notification du système');
+const last = (await worker.evaluate(() => globalThis.__notifications))[1];
+assert.equal(last.title, 'Dépôt reçu');
+assert.equal(last.contextMessage, 'alice@gmail.com · De : Banque');
+assert.equal(last.id, 'msg|alice@gmail.com|t7');
+assert.equal(await bubble(site2), null);
 
 // 10. Anglais
 await options.selectOption('#language', 'en');

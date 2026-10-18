@@ -5,7 +5,7 @@ Extension Chrome pour voir et trier ses courriels Gmail d'un clic, à la manièr
 - **Badge** sur l'icône : nombre de conversations non lues, tous comptes confondus (vérifié chaque minute par défaut).
 - **Non lus seulement** par défaut ; bascule « Non lus / Tous » en haut de la fenêtre.
 - **Plusieurs comptes Gmail**, chacun dans sa section, **repliable** d'un clic, dans l'**ordre de votre choix** (flèches dans les Réglages).
-- **Notifications** à chaque nouveau courriel, dans une **fenêtre Aperçu Gmail** au coin de l'écran : compte qui l'a reçu (avec sa couleur), expéditeur, objet et aperçu ; boutons « Ouvrir », « Marquer comme lu » et « Archiver ». Les cartes s'empilent, se ferment seules (durée réglable, en pause au survol). La notification classique du système reste disponible en option.
+- **Notifications** à chaque nouveau courriel, dans une **bulle en haut à droite de l'onglet ouvert**, quel que soit le site : compte qui l'a reçu (avec sa couleur), expéditeur, objet et aperçu ; boutons « Ouvrir », « Marquer comme lu » et « Archiver ». Les bulles s'empilent, suivent l'onglet affiché et se ferment seules (durée réglable, en pause au survol ou quand le navigateur n'est pas au premier plan). Autres styles au choix : petite fenêtre séparée, notification du système, ou bulle + système.
 - Fenêtre de **800 × 600 px**, le maximum permis par Chrome pour une extension.
 - **Lecture** d'une conversation directement dans la fenêtre, images distantes masquées par défaut (protection contre le pistage).
 - **Actions rapides** : archiver, supprimer, signaler comme spam, marquer comme lu ou non lu, ouvrir dans Gmail.
@@ -118,7 +118,10 @@ Garder le dossier décompressé au même endroit : Chrome charge l'extension dep
 - **Reconnexion** : l'accès se renouvelle seul tant que le compte reste connecté à Google dans Chrome. Si Google le demande (en mode test, cela peut arriver environ chaque semaine), le badge devient orange avec un `!` et la fenêtre affiche **Se reconnecter**.
 - **Supprimer** met la conversation à la corbeille de Gmail (récupérable 30 jours), jamais de suppression définitive.
 - **Mise à jour** : télécharger la nouvelle version, **remplacer le contenu** du dossier `extension` déjà chargé par celui du nouveau, puis cliquer sur la flèche de rechargement de l'extension dans `chrome://extensions`. Les comptes et réglages sont conservés. Ne pas cliquer « Supprimer » sur l'extension : cela efface comptes et réglages.
-- **Notifications** : la première vérification après l'ajout d'un compte ne notifie rien (les courriels déjà présents ne sont pas annoncés). **Tester la notification** dans les Réglages montre le résultat tout de suite. Type (fenêtre, système ou les deux), durée d'affichage et position (en bas ou en haut à droite) se règlent au même endroit. La fenêtre est une fenêtre du navigateur : si celui-ci est caché derrière une autre application, elle peut s'afficher derrière ; le style « Les deux » ajoute la notification du système, qui passe toujours devant (elle exige d'autoriser les notifications du navigateur dans Windows ou macOS).
+- **Notifications** : la première vérification après l'ajout d'un compte ne notifie rien (les courriels déjà présents ne sont pas annoncés). **Tester la notification** dans les Réglages montre le résultat tout de suite. Type, durée d'affichage et position (en haut ou en bas à droite) se règlent au même endroit.
+  - La bulle est dessinée dans la page, isolée du site (le site ne peut ni la lire ni la modifier). C'est pour cela que l'extension demande l'accès à tous les sites ; elle ne s'en sert que pour afficher la bulle.
+  - Sur les pages internes du navigateur (nouvel onglet, `brave://…`, réglages, boutique d'extensions), aucune extension ne peut dessiner : la notification du système prend le relais.
+  - Si le navigateur n'est pas au premier plan, la bulle attend votre retour avant de lancer son compte à rebours. Pour être alerté pendant que vous êtes dans une autre application, choisir « Bulle + notification du système ».
 - **Retirer un compte** depuis les Réglages révoque aussi l'accès chez Google.
 
 ## Développement

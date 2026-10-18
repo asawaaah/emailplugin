@@ -14,10 +14,12 @@ import {
   getToasts,
   mergeToasts,
   saveAccountStates,
+  saveSettings,
   saveSeen,
   saveToasts,
 } from './lib/storage';
 import { cornerBounds, workArea } from './lib/toast-window';
+import type { ToastTabMessage, ToastTabOptions } from './content/toast';
 import type { AccountState, MessageMeta, SeenState, Settings, Toast } from './lib/types';
 
 const ALARM = 'poll';
@@ -132,8 +134,110 @@ function showToasts(items: Toast[], settings: Settings): Promise<void> {
 
 function dismissToasts(keys: string[]): Promise<void> {
   const remove = new Set(keys);
-  return serialized(async () => saveToasts((await getToasts()).filter((toast) => !remove.has(toast.key))));
+  return serialized(async () => {
+    await saveToasts((await getToasts()).filter((toast) => !remove.has(toast.key)));
+    if ((await getToastTabId()) !== null) await pushToTab(await getSettings());
+  });
 }
+
+// ---------- Bulle dans l'onglet ouvert ----------
+
+/** Un courriel plus ancien n'est plus montré quand on change d'onglet. */
+const TOAST_MAX_AGE_MS = 15 * 60 * 1000;
+
+async function getToastTabId(): Promise<number | null> {
+  const { toastTabId } = await chrome.storage.session.get('toastTabId');
+  return typeof toastTabId === 'number' ? toastTabId : null;
+}
+
+async function setToastTabId(id: number | null): Promise<void> {
+  await chrome.storage.session.set({ toastTabId: id });
+}
+
+/** Onglet affiché dans la dernière fenêtre du navigateur utilisée. */
+async function activeTab(): Promise<chrome.tabs.Tab | undefined> {
+  const browser = await chrome.windows.getLastFocused({ windowTypes: ['normal'], populate: true }).catch(() => undefined);
+  return browser?.tabs?.find((tab) => tab.active);
+}
+
+function sendToTab(tabId: number, message: ToastTabMessage): Promise<unknown> {
+  return chrome.tabs.sendMessage(tabId, message);
+}
+
+/**
+ * Affiche la file dans l'onglet actif (et la retire de l'onglet précédent).
+ * Renvoie false si la page n'accepte pas d'affichage (pages internes de Brave
+ * ou de Chrome, boutique d'extensions, aucun onglet).
+ */
+async function pushToTab(settings: Settings): Promise<boolean> {
+  const all = await getToasts();
+  const queue = all.filter((toast) => Date.now() - toast.date < TOAST_MAX_AGE_MS);
+  if (queue.length !== all.length) await saveToasts(queue);
+
+  const previous = await getToastTabId();
+  const tab = await activeTab();
+  const target = tab?.id;
+  if (previous !== null && (previous !== target || !queue.length)) {
+    await sendToTab(previous, { type: 'clearToasts' }).catch(() => undefined);
+  }
+  if (!queue.length) {
+    await setToastTabId(null);
+    return true;
+  }
+  if (target === undefined) {
+    await setToastTabId(null);
+    return false;
+  }
+  const accounts = await getAccounts();
+  const options: ToastTabOptions = {
+    seconds: settings.notificationSeconds,
+    position: settings.notificationPosition,
+    language: settings.language,
+    ranks: Object.fromEntries(accounts.map((a, i) => [a.email, i])),
+  };
+  try {
+    await chrome.scripting.executeScript({ target: { tabId: target }, files: ['toast-content.js'] });
+    await sendToTab(target, { type: 'renderToasts', toasts: queue, options });
+    await setToastTabId(target);
+    return true;
+  } catch {
+    await setToastTabId(null);
+    return false;
+  }
+}
+
+/** Ajoute des courriels à la bulle ; false si aucun onglet ne peut l'afficher. */
+function showInTab(items: Toast[], settings: Settings): Promise<boolean> {
+  if (!items.length) return Promise.resolve(true);
+  return serialized(async () => {
+    await saveToasts(mergeToasts(await getToasts(), items));
+    const shown = await pushToTab(settings);
+    if (!shown) {
+      // Annoncés autrement (notification du système) : on ne les remontre pas plus tard.
+      const keys = new Set(items.map((x) => x.key));
+      await saveToasts((await getToasts()).filter((x) => !keys.has(x.key)));
+    }
+    return shown;
+  });
+}
+
+/** La bulle suit l'onglet affiché : changement d'onglet, de fenêtre, ou page rechargée. */
+function followActiveTab(): void {
+  void serialized(async () => {
+    if (!(await getToasts()).length) return;
+    const settings = await getSettings();
+    if (settings.notificationStyle === 'tab' || settings.notificationStyle === 'both') await pushToTab(settings);
+  });
+}
+
+chrome.tabs.onActivated.addListener(followActiveTab);
+chrome.windows.onFocusChanged.addListener((windowId) => {
+  if (windowId !== chrome.windows.WINDOW_ID_NONE) followActiveTab();
+});
+// Page chargée dans l'onglet affiché (rechargement, ou site ouvert depuis un nouvel onglet).
+chrome.tabs.onUpdated.addListener((_tabId, info, tab) => {
+  if (info.status === 'complete' && tab.active) followActiveTab();
+});
 
 chrome.windows.onRemoved.addListener((windowId) => {
   void serialized(async () => {
@@ -155,15 +259,27 @@ async function openInGmail(email: string, threadId: string | null): Promise<void
   await chrome.windows.update(browser.id, { focused: true });
 }
 
-/** Affiche les nouveaux courriels selon le style choisi dans les réglages. */
-async function announce(email: string, messages: MessageMeta[], settings: Settings): Promise<void> {
-  if (settings.notificationStyle !== 'system') {
-    await showToasts(messages.map((m) => toToast(email, m)), settings);
+/**
+ * Affiche des courriels selon le style choisi : bulle dans l'onglet (repli
+ * sur la notification du système si la page la refuse), petite fenêtre,
+ * notification du système, ou bulle + système.
+ */
+async function deliver(toasts: Toast[], settings: Settings, systemNotify: () => void): Promise<void> {
+  const style = settings.notificationStyle;
+  if (style === 'window') await showToasts(toasts, settings);
+  if (style === 'tab' || style === 'both') {
+    const shown = await showInTab(toasts, settings);
+    if (!shown && style === 'tab') systemNotify();
   }
-  if (settings.notificationStyle !== 'window') {
+  if (style === 'system' || style === 'both') systemNotify();
+}
+
+/** Affiche les nouveaux courriels d'un compte. */
+async function announce(email: string, messages: MessageMeta[], settings: Settings): Promise<void> {
+  await deliver(messages.map((m) => toToast(email, m)), settings, () => {
     if (messages.length > MAX_INDIVIDUAL) notifySummary(email, messages);
     else messages.forEach((m) => notifyMessage(email, m));
-  }
+  });
 }
 
 /** Repère les nouveaux non lus d'un compte et affiche les notifications. */
@@ -260,26 +376,24 @@ async function handle(request: Request): Promise<unknown> {
       const settings = await getSettings();
       setLanguage(settings.language);
       const email = (await getAccounts())[0]?.email ?? 'exemple@gmail.com';
-      if (settings.notificationStyle !== 'system') {
-        await showToasts([{
-          key: `test|${Date.now()}`,
-          email,
-          threadId: null,
-          from: { name: t('appName'), email: '' },
-          subject: t('notifTestTitle'),
-          snippet: t('notifTestMessage'),
-          date: Date.now(),
-        }], settings);
-      }
-      if (settings.notificationStyle !== 'window') {
-        chrome.notifications.create(`test|${Date.now()}`, {
+      const test: Toast = {
+        key: `test|${Date.now()}`,
+        email,
+        threadId: null,
+        from: { name: t('appName'), email: '' },
+        subject: t('notifTestTitle'),
+        snippet: t('notifTestMessage'),
+        date: Date.now(),
+      };
+      await deliver([test], settings, () => {
+        chrome.notifications.create(test.key, {
           type: 'basic',
           iconUrl: ICON,
           title: t('notifTestTitle'),
           message: t('notifTestMessage'),
           contextMessage: email,
         });
-      }
+      });
       return null;
     }
     case 'threadAction': {
@@ -318,8 +432,27 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === ALARM) void pollAll();
 });
 
+/** Mises à jour de l'extension : réglages à faire évoluer une seule fois. */
+async function migrate(): Promise<void> {
+  const { migrations } = await chrome.storage.local.get('migrations');
+  const done = new Set((migrations as string[] | undefined) ?? []);
+  if (!done.has('notif-tab')) {
+    // La bulle dans l'onglet remplace la petite fenêtre comme style par défaut.
+    const settings = await getSettings();
+    if (settings.notificationStyle === 'window') await saveSettings({ notificationStyle: 'tab' });
+    done.add('notif-tab');
+  }
+  if (!done.has('notif-top-right')) {
+    // Bulle en haut à droite par défaut (demande du 18 octobre 2026).
+    const settings = await getSettings();
+    if (settings.notificationPosition === 'bottom-right') await saveSettings({ notificationPosition: 'top-right' });
+    done.add('notif-top-right');
+  }
+  await chrome.storage.local.set({ migrations: [...done] });
+}
+
 chrome.runtime.onInstalled.addListener((details) => {
-  void scheduleAlarm().then(pollAll);
+  void migrate().then(scheduleAlarm).then(pollAll);
   if (details.reason === 'install') void chrome.runtime.openOptionsPage();
 });
 
