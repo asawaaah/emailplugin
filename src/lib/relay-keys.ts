@@ -43,9 +43,20 @@ export function normalizeRelayUrl(value: string): string | null {
   }
 }
 
+/**
+ * Jeton de l'adresse de livraison Pub/Sub, dérivé de la clé du relais
+ * (HMAC-SHA256(secret, "pubsub")). Il ne permet que de livrer des alertes :
+ * la clé du relais elle-même n'apparaît jamais dans une adresse.
+ * Calculé à l'identique par le relais (relay/worker.js).
+ */
+export async function pubsubToken(secret: string): Promise<string> {
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return base64url(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode('pubsub')));
+}
+
 /** Adresse de livraison à déclarer dans l'abonnement Pub/Sub. */
-export function pubsubEndpoint(relayUrl: string, secret: string): string {
-  return `${relayUrl}/pubsub?secret=${encodeURIComponent(secret)}`;
+export async function pubsubEndpoint(relayUrl: string, secret: string): Promise<string> {
+  return `${relayUrl}/pubsub?token=${await pubsubToken(secret)}`;
 }
 
 /** projects/<projet>/topics/<sujet> */

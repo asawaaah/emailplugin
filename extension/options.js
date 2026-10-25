@@ -499,8 +499,12 @@ function normalizeRelayUrl(value) {
     return null;
   }
 }
-function pubsubEndpoint(relayUrl, secret) {
-  return `${relayUrl}/pubsub?secret=${encodeURIComponent(secret)}`;
+async function pubsubToken(secret) {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return base64url(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode("pubsub")));
+}
+async function pubsubEndpoint(relayUrl, secret) {
+  return `${relayUrl}/pubsub?token=${await pubsubToken(secret)}`;
 }
 function isPubsubTopic(value) {
   return /^projects\/[a-z][a-z0-9-]{4,28}[a-z0-9]\/topics\/[A-Za-z][\w.~+%-]{2,254}$/.test(value.trim());
@@ -623,7 +627,7 @@ async function instantPushCard(settings, rerender) {
     void saveSettings({ relayUrl: relayUrl2, pubsubTopic }).then(rerender);
   });
   const relayUrl = normalizeRelayUrl(settings.relayUrl);
-  const endpoint = keys && relayUrl ? copyField("pubsub-endpoint", t("pushEndpoint"), pubsubEndpoint(relayUrl, keys.secret), t("pushEndpointHint")) : null;
+  const endpoint = keys && relayUrl ? copyField("pubsub-endpoint", t("pushEndpoint"), await pubsubEndpoint(relayUrl, keys.secret), t("pushEndpointHint")) : null;
   const actionFeedback = status();
   const toggle = h("button", { type: "button", class: settings.instantPush ? "outlined-button" : "filled-button" }, t(settings.instantPush ? "pushDisable" : "pushEnable"));
   toggle.addEventListener("click", () => {

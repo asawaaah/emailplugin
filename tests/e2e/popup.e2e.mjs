@@ -468,7 +468,11 @@ await options.fill('#pubsub-topic', 'projects/apercu-gmail-123/topics/gmail-push
 await options.getByRole('button', { name: 'Enregistrer' }).nth(1).click();
 await options.waitForSelector('#pubsub-endpoint');
 const secret = await options.locator('#relay-secret').inputValue();
-assert.equal(await options.locator('#pubsub-endpoint').inputValue(), `${RELAY}/pubsub?secret=${encodeURIComponent(secret)}`);
+// Jeton dérivé (HMAC), jamais la clé du relais elle-même.
+const { createHmac } = await import('node:crypto');
+const expectedToken = createHmac('sha256', secret).update('pubsub').digest('base64url');
+assert.equal(await options.locator('#pubsub-endpoint').inputValue(), `${RELAY}/pubsub?token=${expectedToken}`);
+assert.ok(!(await options.locator('#pubsub-endpoint').inputValue()).includes(secret));
 
 // Sans écran, Chromium n'a pas de service de push : on remplace l'abonnement du navigateur.
 await worker.evaluate(() => {

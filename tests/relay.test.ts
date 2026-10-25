@@ -1,5 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import relay, { base64url, decodePubSub, safeEqual, validEmails, validSubscription, vapidJwt } from '../relay/worker.js';
+import relay, { base64url, decodePubSub, pubsubToken, safeEqual, validEmails, validSubscription, vapidJwt } from '../relay/worker.js';
 
 /** Espace KV en mémoire, comme celui de Cloudflare. */
 class MemoryKV {
@@ -40,8 +40,8 @@ beforeEach(() => {
 const call = (path: string, init: RequestInit = {}) => relay.fetch(new Request(`https://relay.exemple.workers.dev${path}`, init), env);
 const authed = (path: string, body: unknown) =>
   call(path, { method: 'POST', headers: { Authorization: `Bearer ${SECRET}` }, body: JSON.stringify(body) });
-const pubsub = (email: string, secret = SECRET) =>
-  call(`/pubsub?secret=${encodeURIComponent(secret)}`, {
+const pubsub = async (email: string, token?: string) =>
+  call(`/pubsub?token=${encodeURIComponent(token ?? (await pubsubToken(SECRET)))}`, {
     method: 'POST',
     body: JSON.stringify({ message: { data: btoa(JSON.stringify({ emailAddress: email, historyId: 123 })) } }),
   });
@@ -57,8 +57,21 @@ describe('relais Cloudflare', () => {
     expect(response.status).toBe(401);
   });
 
-  it('refuse une alerte Pub/Sub sans la clé', async () => {
-    expect((await pubsub('alice@gmail.com', 'mauvaise')).status).toBe(403);
+  it('refuse une alerte Pub/Sub sans le bon jeton', async () => {
+    expect((await pubsub('alice@gmail.com', 'mauvais')).status).toBe(403);
+    // La clé principale n'est pas acceptée à la place du jeton dérivé…
+    expect((await pubsub('alice@gmail.com', SECRET)).status).toBe(403);
+  });
+
+  it('le jeton de l’adresse Pub/Sub ne permet pas de gérer les inscriptions', async () => {
+    const token = await pubsubToken(SECRET);
+    expect(token).not.toBe(SECRET);
+    const response = await call('/register', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ emails: ['alice@gmail.com'], subscription: { endpoint: ENDPOINT } }),
+    });
+    expect(response.status).toBe(401);
   });
 
   it('sonne le navigateur inscrit, sans contenu, avec un jeton VAPID valide', async () => {

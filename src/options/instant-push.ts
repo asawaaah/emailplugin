@@ -73,7 +73,7 @@ export async function instantPushCard(settings: Settings, rerender: () => Promis
   });
   const relayUrl = normalizeRelayUrl(settings.relayUrl);
   const endpoint = keys && relayUrl
-    ? copyField('pubsub-endpoint', t('pushEndpoint'), pubsubEndpoint(relayUrl, keys.secret), t('pushEndpointHint'))
+    ? copyField('pubsub-endpoint', t('pushEndpoint'), await pubsubEndpoint(relayUrl, keys.secret), t('pushEndpointHint'))
     : null;
 
   // Étape 3 : activation

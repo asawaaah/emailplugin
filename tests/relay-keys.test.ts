@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { fromBase64url, generateRelayKeys, isPubsubTopic, normalizeRelayUrl, pubsubEndpoint } from '../src/lib/relay-keys';
-import { vapidJwt } from '../relay/worker.js';
+import { fromBase64url, generateRelayKeys, isPubsubTopic, normalizeRelayUrl, pubsubEndpoint, pubsubToken } from '../src/lib/relay-keys';
+import { pubsubToken as relayPubsubToken, vapidJwt } from '../relay/worker.js';
 
 describe('clés du relais', () => {
   it('génère une clé partagée et une paire VAPID utilisables par le relais', async () => {
@@ -28,8 +28,14 @@ describe('clés du relais', () => {
     expect(normalizeRelayUrl('pas une adresse')).toBeNull();
   });
 
-  it('construit l’adresse de livraison Pub/Sub', () => {
-    expect(pubsubEndpoint('https://r.workers.dev', 'a+b/c')).toBe('https://r.workers.dev/pubsub?secret=a%2Bb%2Fc');
+  it('construit l’adresse de livraison Pub/Sub avec un jeton dérivé, identique côté relais', async () => {
+    const secret = 'cle-du-relais';
+    const token = await pubsubToken(secret);
+    expect(token).toBe(await relayPubsubToken(secret));
+    expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    const endpoint = await pubsubEndpoint('https://r.workers.dev', secret);
+    expect(endpoint).toBe(`https://r.workers.dev/pubsub?token=${token}`);
+    expect(endpoint).not.toContain(secret);
   });
 
   it('reconnaît un sujet Pub/Sub', () => {

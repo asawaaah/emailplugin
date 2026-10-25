@@ -1,7 +1,9 @@
 // Relais « Aperçu Gmail » pour Cloudflare Workers.
 //
 // 1. Gmail publie une alerte dans Google Pub/Sub à chaque changement de la
-//    boîte de réception ; Pub/Sub la livre ici (POST /pubsub?secret=…).
+//    boîte de réception ; Pub/Sub la livre ici (POST /pubsub?token=…).
+//    Ce jeton est dérivé de RELAY_SECRET (HMAC) et ne sert qu'à cette adresse :
+//    l'adresse déclarée chez Google ne permet pas de gérer les inscriptions.
 // 2. Le relais « sonne » chaque navigateur inscrit pour cette adresse, par un
 //    Web Push SANS contenu : aucune donnée de courriel ne passe par ici.
 // 3. L'extension se réveille et va vérifier Gmail elle-même.
@@ -31,7 +33,7 @@ export default {
       if (!isConfigured(env)) return json({ error: 'not_configured' }, 503);
 
       if (request.method === 'POST' && url.pathname === '/pubsub') {
-        if (!safeEqual(url.searchParams.get('secret') ?? '', env.RELAY_SECRET)) return json({ error: 'forbidden' }, 403);
+        if (!safeEqual(url.searchParams.get('token') ?? '', await pubsubToken(env.RELAY_SECRET))) return json({ error: 'forbidden' }, 403);
         const email = decodePubSub(await request.json().catch(() => null));
         if (email) await ringAll(env, email);
         // Toujours 204 : Pub/Sub ne doit pas relivrer une alerte déjà traitée.
@@ -86,6 +88,15 @@ export function safeEqual(a, b) {
   let diff = x.length ^ y.length;
   for (let i = 0; i < Math.max(x.length, y.length); i++) diff |= (x[i] ?? 0) ^ (y[i] ?? 0);
   return diff === 0 && y.length > 0;
+}
+
+/**
+ * Jeton de l'adresse de livraison Pub/Sub : HMAC-SHA256(RELAY_SECRET, "pubsub").
+ * Calculé à l'identique par l'extension (src/lib/relay-keys.ts).
+ */
+export async function pubsubToken(secret) {
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(String(secret)), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return base64url(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode('pubsub')));
 }
 
 /** Abonnement Web Push acceptable : adresse https d'un service de push connu. */
