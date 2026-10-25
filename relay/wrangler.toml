@@ -1,0 +1,14 @@
+# Déploiement en ligne de commande (facultatif : le tableau de bord Cloudflare suffit).
+# 1. npx wrangler kv namespace create SUBSCRIPTIONS  → copier l'id ci-dessous
+# 2. npx wrangler secret put RELAY_SECRET (puis VAPID_PUBLIC_KEY, VAPID_PRIVATE_JWK)
+# 3. npx wrangler deploy
+name = "apercu-gmail-relay"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+
+[vars]
+VAPID_SUBJECT = "mailto:vous@exemple.com"
+
+[[kv_namespaces]]
+binding = "SUBSCRIPTIONS"
+id = "REMPLACER_PAR_L_ID_DE_L_ESPACE_KV"

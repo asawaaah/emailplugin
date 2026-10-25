@@ -66,3 +66,14 @@ input[readonly] { background: var(--surface); }
 .palette { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 0 4px 32px; }
 .custom-label { display: inline-flex; align-items: center; gap: 6px; margin-left: 6px; font-size: 13px; color: var(--text-muted); cursor: pointer; }
 .custom-color { width: 32px; height: 28px; padding: 0; border: 1px solid var(--outline); border-radius: 6px; background: none; cursor: pointer; }
+
+/* Notifications instantanées */
+.push-step { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--outline-soft); }
+.push-step h3 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
+.push-step .row { margin-top: 10px; }
+.push-state { margin: 0; padding: 8px 12px; border-radius: 8px; background: var(--surface); }
+.push-state.active { background: #e6f4ea; color: #0d652d; }
+.push-state.error { background: var(--warning-bg); color: var(--warning-text); }
+@media (prefers-color-scheme: dark) {
+  .push-state.active { background: #0f3d22; color: #a8dab5; }
+}

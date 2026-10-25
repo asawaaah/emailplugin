@@ -288,7 +288,10 @@ var GmailClient = class {
     let response = await send2(false);
     if (response.status === 401) response = await send2(true);
     if (response.status === 401) throw new AuthRequiredError();
-    if (!response.ok) throw new GmailApiError(response.status, `Gmail API ${response.status}`);
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      throw new GmailApiError(response.status, body?.error?.message ? `Gmail API ${response.status} : ${body.error.message}` : `Gmail API ${response.status}`);
+    }
     if (response.status === 204) return void 0;
     return await response.json();
   }
@@ -329,6 +332,20 @@ var GmailClient = class {
       snippet: decodeEntities(message.snippet ?? ""),
       date: Number(message.internalDate ?? 0)
     };
+  }
+  /**
+   * Demande à Gmail d'alerter le sujet Pub/Sub à chaque changement de la boîte
+   * de réception. Valable 7 jours : à renouveler.
+   */
+  async watch(topicName) {
+    const result = await this.request("/watch", {
+      method: "POST",
+      body: JSON.stringify({ topicName, labelIds: ["INBOX"], labelFilterBehavior: "INCLUDE" })
+    });
+    return { historyId: result.historyId, expiration: Number(result.expiration) };
+  }
+  async stopWatch() {
+    await this.request("/stop", { method: "POST" });
   }
   async getThread(id) {
     const thread = await this.request(`/threads/${id}?format=full`);
@@ -476,7 +493,39 @@ var fr = {
   colorYellow: "Jaune",
   colorBrown: "Brun",
   colorGrey: "Gris",
-  privacyNote: "Vos courriels ne quittent jamais votre navigateur : l\u2019extension parle directement \xE0 Google, sans serveur interm\xE9diaire."
+  pushSection: "Notifications instantan\xE9es",
+  pushHelp: "Avec un petit relais gratuit sur Cloudflare, Gmail pr\xE9vient l\u2019extension d\xE8s qu\u2019un courriel arrive, au lieu d\u2019attendre la v\xE9rification r\xE9guli\xE8re. Le relais ne re\xE7oit qu\u2019un signal, jamais vos courriels. Guide pas \xE0 pas : README, section \xAB Notifications instantan\xE9es \xBB.",
+  pushStep1: "1. Cl\xE9s du relais",
+  pushGenerateKeys: "G\xE9n\xE9rer les cl\xE9s",
+  pushRegenerateKeys: "R\xE9g\xE9n\xE9rer les cl\xE9s",
+  pushRegenerateConfirm: "De nouvelles cl\xE9s remplaceront les actuelles : il faudra les recopier dans Cloudflare et mettre \xE0 jour l\u2019abonnement Pub/Sub. Continuer ?",
+  pushKeysHint: "\xC0 coller dans Cloudflare (Worker \u203A Settings \u203A Variables and Secrets, type \xAB Secret \xBB). Ne les partagez pas.",
+  pushStep2: "2. Relais et Pub/Sub",
+  pushRelayUrl: "Adresse du relais Cloudflare",
+  pushTopic: "Sujet Pub/Sub (Google Cloud)",
+  pushInvalidUrl: "Adresse invalide : elle doit commencer par https://",
+  pushInvalidTopic: "Sujet invalide : il doit avoir la forme projects/<projet>/topics/<sujet>.",
+  pushEndpoint: "Adresse de livraison \xE0 d\xE9clarer dans l\u2019abonnement Pub/Sub",
+  pushEndpointHint: "Google Cloud \u203A Pub/Sub \u203A Abonnements \u203A Cr\xE9er : type \xAB Push \xBB, point de terminaison = cette adresse.",
+  pushStep3: "3. Activation",
+  pushEnable: "Activer les notifications instantan\xE9es",
+  pushDisable: "D\xE9sactiver",
+  pushWorking: "Un instant\u2026",
+  pushTest: "Tester le relais",
+  pushTesting: "Test en cours (15 s au plus)\u2026",
+  pushTestOk: "Le relais fonctionne : alerte re\xE7ue en {0} s.",
+  pushTestFail: "Aucune alerte re\xE7ue. V\xE9rifiez la messagerie push de Brave et les variables du relais.",
+  pushOff: "D\xE9sactiv\xE9es : l\u2019extension v\xE9rifie Gmail \xE0 intervalle r\xE9gulier.",
+  pushActive: "Actives : Gmail pr\xE9vient l\u2019extension d\xE8s qu\u2019un courriel arrive.",
+  pushLast: "Derni\xE8re alerte re\xE7ue : {0}",
+  pushErrMissingConfig: "Configuration incompl\xE8te : g\xE9n\xE9rez les cl\xE9s, puis enregistrez l\u2019adresse du relais et le sujet Pub/Sub.",
+  pushErrRelayUnreachable: "Relais injoignable : v\xE9rifiez l\u2019adresse du Worker Cloudflare et qu\u2019il est d\xE9ploy\xE9.",
+  pushErrRelayAuth: "Le relais refuse les cl\xE9s : v\xE9rifiez RELAY_SECRET, VAPID_PUBLIC_KEY, VAPID_PRIVATE_JWK et l\u2019espace KV SUBSCRIPTIONS dans Cloudflare.",
+  pushErrPushUnavailable: "Le navigateur refuse les alertes push. Dans Brave : brave://settings/privacy \u203A \xAB Utiliser les services Google pour la messagerie push \xBB, puis red\xE9marrez Brave.",
+  pushErrWatchFailed: "Gmail refuse de pr\xE9venir le sujet Pub/Sub : v\xE9rifiez le nom du sujet et que gmail-api-push@system.gserviceaccount.com a le r\xF4le \xAB \xC9diteur Pub/Sub \xBB sur ce sujet.",
+  pushErrNoAccounts: "Ajoutez d\u2019abord un compte Gmail.",
+  pushBraveHint: "Brave : activez \xAB Utiliser les services Google pour la messagerie push \xBB dans brave://settings/privacy.",
+  privacyNote: "Vos courriels ne quittent jamais votre navigateur : l\u2019extension parle directement \xE0 Google. Le relais facultatif des notifications instantan\xE9es ne re\xE7oit qu\u2019un signal, jamais vos courriels."
 };
 var en = {
   appName: "Gmail Preview",
@@ -593,7 +642,39 @@ var en = {
   colorYellow: "Yellow",
   colorBrown: "Brown",
   colorGrey: "Grey",
-  privacyNote: "Your messages never leave your browser: the extension talks directly to Google, with no server in between."
+  pushSection: "Instant notifications",
+  pushHelp: "With a small free relay on Cloudflare, Gmail alerts the extension as soon as a message arrives, instead of waiting for the regular check. The relay only receives a signal, never your messages. Step-by-step guide: README, \u201CInstant notifications\u201D section.",
+  pushStep1: "1. Relay keys",
+  pushGenerateKeys: "Generate keys",
+  pushRegenerateKeys: "Regenerate keys",
+  pushRegenerateConfirm: "New keys will replace the current ones: you will need to copy them into Cloudflare again and update the Pub/Sub subscription. Continue?",
+  pushKeysHint: "Paste into Cloudflare (Worker \u203A Settings \u203A Variables and Secrets, type \u201CSecret\u201D). Do not share them.",
+  pushStep2: "2. Relay and Pub/Sub",
+  pushRelayUrl: "Cloudflare relay address",
+  pushTopic: "Pub/Sub topic (Google Cloud)",
+  pushInvalidUrl: "Invalid address: it must start with https://",
+  pushInvalidTopic: "Invalid topic: it must look like projects/<project>/topics/<topic>.",
+  pushEndpoint: "Delivery address to declare in the Pub/Sub subscription",
+  pushEndpointHint: "Google Cloud \u203A Pub/Sub \u203A Subscriptions \u203A Create: type \u201CPush\u201D, endpoint = this address.",
+  pushStep3: "3. Activation",
+  pushEnable: "Turn on instant notifications",
+  pushDisable: "Turn off",
+  pushWorking: "One moment\u2026",
+  pushTest: "Test the relay",
+  pushTesting: "Testing (15 s at most)\u2026",
+  pushTestOk: "The relay works: alert received in {0} s.",
+  pushTestFail: "No alert received. Check Brave\u2019s push messaging and the relay variables.",
+  pushOff: "Off: the extension checks Gmail at regular intervals.",
+  pushActive: "On: Gmail alerts the extension as soon as a message arrives.",
+  pushLast: "Last alert received: {0}",
+  pushErrMissingConfig: "Incomplete setup: generate the keys, then save the relay address and the Pub/Sub topic.",
+  pushErrRelayUnreachable: "Relay unreachable: check the Cloudflare Worker address and that it is deployed.",
+  pushErrRelayAuth: "The relay rejects the keys: check RELAY_SECRET, VAPID_PUBLIC_KEY, VAPID_PRIVATE_JWK and the SUBSCRIPTIONS KV namespace in Cloudflare.",
+  pushErrPushUnavailable: "The browser refuses push alerts. In Brave: brave://settings/privacy \u203A \u201CUse Google services for push messaging\u201D, then restart Brave.",
+  pushErrWatchFailed: "Gmail refuses to alert the Pub/Sub topic: check the topic name and that gmail-api-push@system.gserviceaccount.com has the \u201CPub/Sub Publisher\u201D role on it.",
+  pushErrNoAccounts: "Add a Gmail account first.",
+  pushBraveHint: "Brave: turn on \u201CUse Google services for push messaging\u201D in brave://settings/privacy.",
+  privacyNote: "Your messages never leave your browser: the extension talks directly to Google. The optional instant-notification relay only receives a signal, never your messages."
 };
 var dictionaries = { fr, en };
 var current = "fr";
@@ -666,7 +747,10 @@ var DEFAULT_SETTINGS = {
   notifications: true,
   notificationStyle: "tab",
   notificationSeconds: 8,
-  notificationPosition: "top-right"
+  notificationPosition: "top-right",
+  instantPush: false,
+  relayUrl: "",
+  pubsubTopic: ""
 };
 async function getSettings() {
   const { settings: settings2 } = await chrome.storage.local.get("settings");

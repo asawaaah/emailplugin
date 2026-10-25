@@ -428,6 +428,86 @@ assert.equal(last.contextMessage, 'alice@gmail.com · De : Banque');
 assert.equal(last.id, 'msg|alice@gmail.com|t7');
 assert.equal(await bubble(site2), null);
 
+// 11. Notifications instantanées : clés, relais, Pub/Sub, activation, alerte, désactivation
+const RELAY = 'https://apercu-relay.exemple.workers.dev';
+const relayCalls = [];
+let relayPublicKey = null;
+await context.route(`${RELAY}/**`, async (route) => {
+  const req = route.request();
+  const path = new URL(req.url()).pathname;
+  relayCalls.push(`${req.method()} ${path} ${req.headers().authorization ? 'auth' : 'anon'}`);
+  if (path === '/') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, service: 'apercu-gmail-relay', configured: true, vapidPublicKey: relayPublicKey }) });
+  if (path === '/test') {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true,"status":201}' });
+    // Le vrai relais enverrait un Web Push : on simule son arrivée dans le service worker.
+    setTimeout(() => void worker.evaluate(() => self.dispatchEvent(new PushEvent('push'))), 300);
+    return;
+  }
+  return route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
+});
+// Gmail : abonnement aux alertes et arrêt.
+await context.route('https://gmail.googleapis.com/gmail/v1/users/me/watch', (route) => {
+  calls.push(`POST ${(route.request().headers().authorization ?? '').replace('Bearer tok-', '')} /watch ${JSON.parse(route.request().postData() ?? '{}').topicName}`);
+  return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ historyId: '1', expiration: String(Date.now() + 7 * 86400_000) }) });
+});
+await context.route('https://gmail.googleapis.com/gmail/v1/users/me/stop', (route) => {
+  calls.push(`POST ${(route.request().headers().authorization ?? '').replace('Bearer tok-', '')} /stop`);
+  return route.fulfill({ status: 204 });
+});
+
+await options.goto(`chrome-extension://${extensionId}/options.html`);
+await options.getByRole('button', { name: 'Générer les clés' }).click();
+await options.waitForSelector('#relay-secret');
+relayPublicKey = await options.locator('#vapid-public').inputValue();
+assert.equal(relayPublicKey.length, 87, 'clé publique VAPID (65 octets en base64url)');
+await options.fill('#relay-url', 'http://pas-https.exemple');
+await options.getByRole('button', { name: 'Enregistrer' }).nth(1).click();
+await options.waitForSelector('text=Adresse invalide');
+await options.fill('#relay-url', `${RELAY}/`);
+await options.fill('#pubsub-topic', 'projects/apercu-gmail-123/topics/gmail-push');
+await options.getByRole('button', { name: 'Enregistrer' }).nth(1).click();
+await options.waitForSelector('#pubsub-endpoint');
+const secret = await options.locator('#relay-secret').inputValue();
+assert.equal(await options.locator('#pubsub-endpoint').inputValue(), `${RELAY}/pubsub?secret=${encodeURIComponent(secret)}`);
+
+// Sans écran, Chromium n'a pas de service de push : on remplace l'abonnement du navigateur.
+await worker.evaluate(() => {
+  const fake = { endpoint: 'https://fcm.googleapis.com/fcm/send/e2e', options: { applicationServerKey: null }, unsubscribe: async () => true };
+  let current = null;
+  self.registration.pushManager.getSubscription = async () => current;
+  self.registration.pushManager.subscribe = async () => (current = fake);
+});
+await options.getByRole('button', { name: 'Activer les notifications instantanées' }).click();
+await options.waitForSelector('.push-state.active', { timeout: 10_000 });
+assert.ok(relayCalls.includes('POST /register auth'), 'inscription auprès du relais, avec la clé');
+assert.ok(calls.includes('POST alice@gmail.com /watch projects/apercu-gmail-123/topics/gmail-push'));
+assert.ok(calls.includes('POST bob.travail@gmail.com /watch projects/apercu-gmail-123/topics/gmail-push'));
+await options.screenshot({ path: `${OUT}/10-instantane${suffix}.png`, fullPage: true });
+
+// Une alerte du relais déclenche une vérification immédiate de Gmail.
+const before = calls.filter((c) => c.endsWith('/labels/INBOX')).length;
+await worker.evaluate(() => self.dispatchEvent(new PushEvent('push')));
+await waitFor(() => calls.filter((c) => c.endsWith('/labels/INBOX')).length > before, 'vérification après une alerte');
+await options.waitForSelector('text=Dernière alerte reçue');
+
+// Test du relais de bout en bout.
+await options.getByRole('button', { name: 'Tester le relais' }).click();
+await options.waitForSelector('text=Le relais fonctionne', { timeout: 20_000 });
+
+// Désactivation : arrêt des alertes Gmail et désinscription du relais.
+await options.getByRole('button', { name: 'Désactiver' }).click();
+await options.waitForSelector('text=Désactivées', { timeout: 10_000 });
+assert.ok(relayCalls.includes('POST /unregister auth'));
+assert.ok(calls.includes('POST alice@gmail.com /stop'));
+
+// Navigateur sans messagerie push (Brave par défaut) : message d'aide.
+await worker.evaluate(() => {
+  self.registration.pushManager.getSubscription = async () => null;
+  self.registration.pushManager.subscribe = async () => { throw new DOMException('Registration failed - push service not available', 'AbortError'); };
+});
+await options.getByRole('button', { name: 'Activer les notifications instantanées' }).click();
+await options.waitForSelector('text=brave://settings/privacy › « Utiliser les services Google', { timeout: 10_000 });
+
 // 10. Anglais
 await options.selectOption('#language', 'en');
 await options.waitForSelector('text=Accounts');

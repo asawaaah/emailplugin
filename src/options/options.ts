@@ -2,32 +2,14 @@
 
 import { ACCOUNT_PALETTE, accountColor } from '../lib/colors';
 import { avatar, h, iconButton } from '../lib/dom';
-import { setLanguage, t, type MessageKey } from '../lib/i18n';
+import { setLanguage, t } from '../lib/i18n';
+import { card, copyField, status } from './fields';
+import { instantPushCard } from './instant-push';
 import { RemoteError, send } from '../lib/messages';
 import { MAX_THREADS_CHOICES, NOTIFICATION_SECONDS_CHOICES, POLL_CHOICES, getAccounts, getSettings, moveAccount, saveAccounts, saveSettings, setAccountColor } from '../lib/storage';
 import type { Language, NotificationPosition, NotificationStyle, Settings } from '../lib/types';
 
 const app = document.getElementById('app') as HTMLElement;
-
-function card(titleKey: MessageKey, ...children: Array<Node | null>): HTMLElement {
-  return h('section', { class: 'card' }, h('h2', {}, t(titleKey)), ...children.filter((c): c is Node => c !== null));
-}
-
-function status(): HTMLElement {
-  return h('p', { class: 'status', role: 'status', 'aria-live': 'polite' });
-}
-
-function copyField(id: string, label: string, value: string): HTMLElement {
-  const input = h('input', { id, type: 'text', readonly: true, value, class: 'mono' });
-  const button = h('button', { type: 'button', class: 'outlined-button' }, t('copy'));
-  button.addEventListener('click', () => {
-    void navigator.clipboard.writeText(value).then(() => {
-      button.textContent = t('copied');
-      window.setTimeout(() => (button.textContent = t('copy')), 1500);
-    });
-  });
-  return h('div', { class: 'field' }, h('label', { for: id }, label), h('div', { class: 'row' }, input, button));
-}
 
 function googleCard(settings: Settings): HTMLElement {
   const input = h('input', {
@@ -239,6 +221,7 @@ async function render(): Promise<void> {
     googleCard(settings),
     await accountsCard(settings),
     prefsCard(settings),
+    await instantPushCard(settings, render),
     h('p', { class: 'help privacy' }, t('privacyNote')),
   );
 }

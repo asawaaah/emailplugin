@@ -13,6 +13,7 @@ Extension Chrome pour voir et trier ses courriels Gmail d'un clic, à la manièr
 - **Actions rapides** : archiver, supprimer, signaler comme spam, marquer comme lu ou non lu, ouvrir dans Gmail.
 - Interface en **français** (par défaut) et en **anglais**, thèmes clair et sombre.
 - Aucun serveur : l'extension parle directement à l'API Gmail de Google. Vos courriels ne passent par aucun autre service.
+- **Notifications instantanées** en option, avec un petit relais gratuit sur Cloudflare (voir plus bas) ; sinon, vérification chaque minute.
 
 ## Installation (une seule fois, environ 15 minutes)
 
@@ -126,6 +127,91 @@ Garder le dossier décompressé au même endroit : Chrome charge l'extension dep
   - Si le navigateur n'est pas au premier plan, la bulle attend votre retour avant de lancer son compte à rebours. Pour être alerté pendant que vous êtes dans une autre application, choisir « Bulle + notification du système ».
 - **Retirer un compte** depuis les Réglages révoque aussi l'accès chez Google.
 
+## Notifications instantanées (facultatif)
+
+Par défaut, l'extension vérifie Gmail chaque minute. Avec ce réglage, **Gmail la prévient dès qu'un courriel arrive** (quelques secondes), comme Checker Plus.
+
+```text
+Gmail ──alerte──▶ Google Pub/Sub ──▶ relais Cloudflare ──coup de sonnette──▶ Brave ──▶ l'extension vérifie Gmail
+```
+
+- Le relais ne reçoit que **l'adresse du compte** et un numéro de version de la boîte, **jamais le contenu des courriels**. Le coup de sonnette envoyé à Brave est vide.
+- Une fausse alerte ne pourrait que déclencher une vérification de votre boîte.
+- La vérification chaque minute continue en parallèle : si le relais tombe, rien n'est perdu.
+
+**Coûts** : rien à payer pour un usage personnel. Cloudflare Workers est gratuit jusqu'à 100 000 requêtes par jour et Pub/Sub jusqu'à 10 Go par mois (une alerte pèse environ 1 Ko). Google peut toutefois exiger d'**associer un compte de facturation** (carte de crédit) au projet pour activer Pub/Sub : créez alors une **alerte de budget à 1 $** (étape C.1).
+
+Prévoir environ 30 minutes. Gardez la page **Réglages** de l'extension ouverte dans un onglet : vous y ferez des allers-retours.
+
+### A. Extension : générer les clés
+
+Réglages › **Notifications instantanées** › **1. Clés du relais** › **Générer les clés**. Trois valeurs apparaissent : `RELAY_SECRET`, `VAPID_PUBLIC_KEY` et `VAPID_PRIVATE_JWK`, chacune avec un bouton **Copier**.
+
+### B. Cloudflare : déployer le relais
+
+1. Tableau de bord Cloudflare › **Workers & Pages** › **Créer** (*Create*) › **Créer un Worker** (*Hello World*). Nom : `apercu-gmail-relay`, puis **Déployer**.
+2. **Modifier le code** (*Edit code*) : remplacer tout le contenu par celui du fichier [`relay/worker.js`](relay/worker.js) de ce dépôt, puis **Déployer**.
+3. Espace de stockage : **Storage & Databases › KV › Créer** (*Create*), nom `apercu-gmail-relay`.
+4. Retour au Worker › **Settings › Bindings › Add** › **KV namespace** : nom de variable `SUBSCRIPTIONS`, espace `apercu-gmail-relay`. Enregistrer.
+5. Worker › **Settings › Variables and Secrets › Add**, une ligne par valeur :
+   | Nom | Type | Valeur |
+   |---|---|---|
+   | `RELAY_SECRET` | Secret | copiée depuis l'extension |
+   | `VAPID_PUBLIC_KEY` | Secret | copiée depuis l'extension |
+   | `VAPID_PRIVATE_JWK` | Secret | copiée depuis l'extension |
+   | `VAPID_SUBJECT` | Text | `mailto:` suivi de votre adresse, par ex. `mailto:moi@gmail.com` |
+
+   Puis **Deploy**.
+6. Copier l'adresse du Worker (`https://apercu-gmail-relay.<votre-sous-domaine>.workers.dev`) et l'ouvrir dans un onglet : la page doit afficher `"service":"apercu-gmail-relay"` et `"configured":true`.
+
+> En ligne de commande : `relay/wrangler.toml` permet aussi `npx wrangler deploy` (instructions dans le fichier).
+
+### C. Google Cloud : le canal d'alertes Gmail
+
+Toujours dans le projet **Apercu Gmail** (celui de l'ID client).
+
+1. Activer Pub/Sub : <https://console.cloud.google.com/apis/library/pubsub.googleapis.com> › **Activer**. Si Google demande un compte de facturation, l'associer, puis créer une alerte : **Facturation › Budgets et alertes › Créer un budget**, montant **1 $**.
+2. Créer le sujet : <https://console.cloud.google.com/cloudpubsub/topic/list> › **Créer un sujet**. ID du sujet : `gmail-push` ; **décocher** « Ajouter un abonnement par défaut » ; **Créer**.
+3. Copier le **nom complet** du sujet, de la forme `projects/<id-du-projet>/topics/gmail-push`.
+4. Autoriser Gmail à publier : sur la page du sujet, panneau **Autorisations** › **Ajouter un compte principal** :
+   - Nouveaux comptes principaux : `gmail-api-push@system.gserviceaccount.com`
+   - Rôle : **Pub/Sub › Éditeur Pub/Sub** (*Pub/Sub Publisher*)
+   - **Enregistrer**.
+
+### D. Extension : relais et sujet
+
+Réglages › **2. Relais et Pub/Sub** : coller l'adresse du Worker (B.6) et le nom du sujet (C.3), puis **Enregistrer**. Une **adresse de livraison** apparaît, avec un bouton **Copier**.
+
+### E. Google Cloud : relier le sujet au relais
+
+<https://console.cloud.google.com/cloudpubsub/subscription/list> › **Créer un abonnement** :
+- ID de l'abonnement : `gmail-push-relay`
+- Sujet : `gmail-push`
+- Type de distribution : **Push**
+- Point de terminaison : l'**adresse de livraison** copiée à l'étape D
+- Laisser le reste par défaut, puis **Créer**.
+
+### F. Brave : autoriser la messagerie push
+
+`brave://settings/privacy` › activer **« Utiliser les services Google pour la messagerie push »**, puis **redémarrer Brave**. Sans ce réglage, Brave refuse les coups de sonnette (Chrome n'a rien à régler).
+
+### G. Activer et tester
+
+Réglages › **3. Activation** › **Activer les notifications instantanées**. L'état passe au vert, puis **Tester le relais** doit afficher « Le relais fonctionne ». Envoyez-vous un courriel : la bulle doit apparaître en quelques secondes.
+
+L'abonnement de Gmail aux alertes dure 7 jours : l'extension le renouvelle seule toutes les 12 heures, et à chaque ajout ou retrait de compte.
+
+### En cas de problème (notifications instantanées)
+
+| Message dans les Réglages | Solution |
+|---|---|
+| Relais injoignable | Vérifier l'adresse du Worker (B.6) et qu'il est déployé. |
+| Le relais refuse les clés | Vérifier les 3 secrets et la liaison KV `SUBSCRIPTIONS` (B.4, B.5), puis redéployer. Si les clés ont été régénérées, les recopier dans Cloudflare. |
+| Le navigateur refuse les alertes push | Étape F, puis redémarrer Brave. |
+| Gmail refuse de prévenir le sujet Pub/Sub | Vérifier le nom complet du sujet (C.3) et l'autorisation de `gmail-api-push@system.gserviceaccount.com` (C.4). |
+| Test : aucune alerte reçue | Étape F ; vérifier aussi `VAPID_PUBLIC_KEY` dans Cloudflare. |
+| Actif, mais pas de bulle à l'arrivée d'un courriel | Vérifier l'abonnement Pub/Sub (étape E) : type Push et adresse de livraison exacte. Google Cloud › Pub/Sub › Abonnements affiche les livraisons en erreur. |
+
 ## Développement
 
 ```bash
@@ -148,6 +234,8 @@ src/lib/auth.ts      connexion Google multi-comptes (launchWebAuthFlow, renouvel
 src/lib/gmail.ts     client de l'API Gmail
 src/lib/mime.ts      lecture des messages (corps, pièces jointes), document isolé de l'iframe
 src/lib/i18n.ts      textes FR et EN
+src/lib/push.ts      notifications instantanées (Web Push, abonnement Gmail users.watch)
+relay/worker.js      relais Cloudflare (Pub/Sub → Web Push sans contenu)
 tests/               tests Vitest et test de bout en bout
 ```
 

@@ -113,7 +113,11 @@ export class GmailClient {
     let response = await send(false);
     if (response.status === 401) response = await send(true);
     if (response.status === 401) throw new AuthRequiredError();
-    if (!response.ok) throw new GmailApiError(response.status, `Gmail API ${response.status}`);
+    if (!response.ok) {
+      // Message d'erreur de Google (jamais de contenu de courriel), utile pour le relais.
+      const body = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
+      throw new GmailApiError(response.status, body?.error?.message ? `Gmail API ${response.status} : ${body.error.message}` : `Gmail API ${response.status}`);
+    }
     if (response.status === 204) return undefined as T;
     return (await response.json()) as T;
   }
@@ -159,6 +163,22 @@ export class GmailClient {
       snippet: decodeEntities(message.snippet ?? ''),
       date: Number(message.internalDate ?? 0),
     };
+  }
+
+  /**
+   * Demande à Gmail d'alerter le sujet Pub/Sub à chaque changement de la boîte
+   * de réception. Valable 7 jours : à renouveler.
+   */
+  async watch(topicName: string): Promise<{ historyId: string; expiration: number }> {
+    const result = await this.request<{ historyId: string; expiration: string }>('/watch', {
+      method: 'POST',
+      body: JSON.stringify({ topicName, labelIds: ['INBOX'], labelFilterBehavior: 'INCLUDE' }),
+    });
+    return { historyId: result.historyId, expiration: Number(result.expiration) };
+  }
+
+  async stopWatch(): Promise<void> {
+    await this.request('/stop', { method: 'POST' });
   }
 
   async getThread(id: string): Promise<ThreadDetail> {

@@ -3,7 +3,7 @@
 // - Jetons d'accès : chrome.storage.session (en mémoire seulement, effacés à la
 //   fermeture de Chrome ; ils sont renouvelés en silence au besoin).
 
-import type { Account, AccountState, SeenState, Settings, Toast, TokenEntry } from './types';
+import type { Account, AccountState, PushStatus, RelayKeys, SeenState, Settings, Toast, TokenEntry } from './types';
 
 export const DEFAULT_SETTINGS: Settings = {
   clientId: '',
@@ -17,6 +17,9 @@ export const DEFAULT_SETTINGS: Settings = {
   notificationStyle: 'tab',
   notificationSeconds: 8,
   notificationPosition: 'top-right',
+  instantPush: false,
+  relayUrl: '',
+  pubsubTopic: '',
 };
 
 export const NOTIFICATION_SECONDS_CHOICES = [5, 8, 15, 30, 0] as const;
@@ -120,4 +123,24 @@ export async function setAccountColor(email: string, color: string | null): Prom
     const { color: _previous, ...rest } = a;
     return color ? { ...rest, color } : rest;
   }));
+}
+
+export async function getRelayKeys(): Promise<RelayKeys | null> {
+  const { relayKeys } = await chrome.storage.local.get('relayKeys');
+  return (relayKeys as RelayKeys | undefined) ?? null;
+}
+
+export async function saveRelayKeys(keys: RelayKeys): Promise<void> {
+  await chrome.storage.local.set({ relayKeys: keys });
+}
+
+export async function getPushStatus(): Promise<PushStatus> {
+  const { pushStatus } = await chrome.storage.local.get('pushStatus');
+  return (pushStatus as PushStatus | undefined) ?? { state: 'off' };
+}
+
+export async function updatePushStatus(patch: Partial<PushStatus>): Promise<PushStatus> {
+  const next = { ...(await getPushStatus()), ...patch };
+  await chrome.storage.local.set({ pushStatus: next });
+  return next;
 }

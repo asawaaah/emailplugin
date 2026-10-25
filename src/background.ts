@@ -18,11 +18,14 @@ import {
   saveSeen,
   saveToasts,
 } from './lib/storage';
+import { disableInstantPush, enableInstantPush, notePushReceived, renewInstantPush, stopWatching, testInstantPush } from './lib/push';
 import { cornerBounds, workArea } from './lib/toast-window';
 import type { ToastTabMessage } from './content/toast';
 import type { AccountState, MessageMeta, SeenState, Settings, Toast } from './lib/types';
 
 const ALARM = 'poll';
+/** Renouvellement des abonnements Gmail du relais (valables 7 jours). */
+const WATCH_ALARM = 'gmail-watch';
 const BADGE_RED = '#d93025';
 const BADGE_ORANGE = '#e37400';
 
@@ -30,6 +33,7 @@ async function scheduleAlarm(): Promise<void> {
   const { pollMinutes } = await getSettings();
   await chrome.alarms.clear(ALARM);
   await chrome.alarms.create(ALARM, { periodInMinutes: pollMinutes, delayInMinutes: pollMinutes });
+  if (!(await chrome.alarms.get(WATCH_ALARM))) await chrome.alarms.create(WATCH_ALARM, { periodInMinutes: 12 * 60 });
 }
 
 function badgeText(count: number): string {
@@ -291,50 +295,58 @@ async function checkNewMessages(
 }
 
 let polling: Promise<void> | null = null;
+/** Demande arrivée pendant une vérification (alerte du relais) : on revérifie juste après. */
+let pollAgain = false;
 
 /** Vérifie tous les comptes (une seule vérification à la fois). */
 function pollAll(): Promise<void> {
-  if (!polling) {
-    polling = (async () => {
-      const accounts = await getAccounts();
-      const previous = await getAccountStates();
-      const settings = await getSettings();
-      setLanguage(settings.language);
-      const seen = await getSeen();
-      const nextSeen: Record<string, SeenState> = {};
-      const results = await Promise.all(
-        accounts.map(async ({ email }): Promise<AccountState> => {
-          const client = new GmailClient((forceRefresh) => getToken(email, { forceRefresh }));
-          try {
-            const unread = await client.getInboxUnread();
-            try {
-              nextSeen[email] = await checkNewMessages(email, client, settings, seen[email]);
-            } catch {
-              // Sans gravité : on réessaiera à la prochaine vérification.
-              if (seen[email]) nextSeen[email] = seen[email];
-            }
-            return { email, unread, status: 'ok', checkedAt: Date.now() };
-          } catch (error) {
-            const reauth = error instanceof AuthRequiredError || error instanceof AuthError;
-            console.warn('Vérification impossible pour un compte', error instanceof Error ? error.name : error);
-            return {
-              email,
-              unread: previous[email]?.unread ?? null,
-              status: reauth ? 'reauth' : 'error',
-              checkedAt: Date.now(),
-            };
-          }
-        }),
-      );
-      await saveAccountStates(Object.fromEntries(results.map((s) => [s.email, s])));
-      // Garde l'état des comptes non vérifiés cette fois-ci (reconnexion requise).
-      for (const { email } of accounts) if (!nextSeen[email] && seen[email]) nextSeen[email] = seen[email];
-      await saveSeen(nextSeen);
-      await updateBadge(results);
-    })().finally(() => {
-      polling = null;
-    });
+  if (polling) {
+    pollAgain = true;
+    return polling;
   }
+  polling = (async () => {
+    const accounts = await getAccounts();
+    const previous = await getAccountStates();
+    const settings = await getSettings();
+    setLanguage(settings.language);
+    const seen = await getSeen();
+    const nextSeen: Record<string, SeenState> = {};
+    const results = await Promise.all(
+      accounts.map(async ({ email }): Promise<AccountState> => {
+        const client = new GmailClient((forceRefresh) => getToken(email, { forceRefresh }));
+        try {
+          const unread = await client.getInboxUnread();
+          try {
+            nextSeen[email] = await checkNewMessages(email, client, settings, seen[email]);
+          } catch {
+            // Sans gravité : on réessaiera à la prochaine vérification.
+            if (seen[email]) nextSeen[email] = seen[email];
+          }
+          return { email, unread, status: 'ok', checkedAt: Date.now() };
+        } catch (error) {
+          const reauth = error instanceof AuthRequiredError || error instanceof AuthError;
+          console.warn('Vérification impossible pour un compte', error instanceof Error ? error.name : error);
+          return {
+            email,
+            unread: previous[email]?.unread ?? null,
+            status: reauth ? 'reauth' : 'error',
+            checkedAt: Date.now(),
+          };
+        }
+      }),
+    );
+    await saveAccountStates(Object.fromEntries(results.map((s) => [s.email, s])));
+    // Garde l'état des comptes non vérifiés cette fois-ci (reconnexion requise).
+    for (const { email } of accounts) if (!nextSeen[email] && seen[email]) nextSeen[email] = seen[email];
+    await saveSeen(nextSeen);
+    await updateBadge(results);
+  })().finally(() => {
+    polling = null;
+    if (pollAgain) {
+      pollAgain = false;
+      void pollAll();
+    }
+  });
   return polling;
 }
 
@@ -353,12 +365,23 @@ async function handle(request: Request): Promise<unknown> {
     case 'addAccount': {
       const result = await addAccount();
       await pollAll();
+      void renewInstantPush();
       return result;
     }
     case 'removeAccount':
+      await stopWatching(request.email);
       await removeAccount(request.email);
       await pollAll();
+      void renewInstantPush();
       return null;
+    case 'enablePush':
+      await saveSettings({ instantPush: true });
+      return enableInstantPush();
+    case 'disablePush':
+      await saveSettings({ instantPush: false });
+      return disableInstantPush();
+    case 'testPush':
+      return testInstantPush();
     case 'refresh':
       await pollAll();
       return null;
@@ -426,6 +449,20 @@ chrome.runtime.onMessage.addListener((request: Request, sender, sendResponse) =>
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === ALARM) void pollAll();
+  if (alarm.name === WATCH_ALARM) void renewInstantPush();
+});
+
+// Coup de sonnette du relais (Web Push sans contenu) : on vérifie Gmail aussitôt.
+interface ExtendableEventLike extends Event {
+  waitUntil(promise: Promise<unknown>): void;
+}
+globalThis.addEventListener('push', (event) => {
+  const work = notePushReceived().then(pollAll);
+  try {
+    (event as ExtendableEventLike).waitUntil(work);
+  } catch {
+    // Événement sans waitUntil : la vérification se poursuit quand même.
+  }
 });
 
 /** Mises à jour de l'extension : réglages à faire évoluer une seule fois. */
@@ -453,7 +490,7 @@ chrome.runtime.onInstalled.addListener((details) => {
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  void scheduleAlarm().then(pollAll);
+  void scheduleAlarm().then(pollAll).then(renewInstantPush);
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {

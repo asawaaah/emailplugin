@@ -11,7 +11,10 @@ export type Request =
   | { type: 'threadAction'; email: string; threadId: string; action: 'markRead' | 'archive' }
   | { type: 'openThread'; email: string; threadId: string | null }
   | { type: 'dismissToasts'; keys: string[] }
-  | { type: 'placeToastWindow'; windowId: number; height: number };
+  | { type: 'placeToastWindow'; windowId: number; height: number }
+  | { type: 'enablePush' }
+  | { type: 'disablePush' }
+  | { type: 'testPush' };
 
 export type ErrorCode = 'auth_required' | 'no_client_id' | 'canceled' | 'mismatch' | 'failed';
 

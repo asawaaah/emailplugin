@@ -23,6 +23,38 @@ export interface Settings {
   /** Durée d'affichage de la fenêtre, en secondes (0 : jusqu'à fermeture). */
   notificationSeconds: number;
   notificationPosition: NotificationPosition;
+  /** Notifications instantanées par le relais (Pub/Sub + Cloudflare + Web Push). */
+  instantPush: boolean;
+  /** Adresse du relais Cloudflare (https://…workers.dev). */
+  relayUrl: string;
+  /** Sujet Pub/Sub : projects/<projet>/topics/<sujet>. */
+  pubsubTopic: string;
+}
+
+/** Clés du relais, générées par la page Réglages. */
+export interface RelayKeys {
+  secret: string;
+  vapidPublicKey: string;
+  vapidPrivateJwk: string;
+}
+
+export type PushErrorCode =
+  | 'missing_config'
+  | 'relay_unreachable'
+  | 'relay_auth'
+  | 'push_unavailable'
+  | 'watch_failed'
+  | 'no_accounts';
+
+export interface PushStatus {
+  state: 'off' | 'active' | 'error';
+  code?: PushErrorCode;
+  /** Précision technique (message de Google ou du navigateur), sans donnée de courriel. */
+  detail?: string;
+  /** Dernière alerte reçue du relais (ms). */
+  lastPushAt?: number;
+  /** Fin d'abonnement Gmail la plus proche (ms). */
+  watchedUntil?: number;
 }
 
 /** 'both' : bulle dans l'onglet et notification du système. */

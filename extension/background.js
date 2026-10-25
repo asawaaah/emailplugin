@@ -135,7 +135,10 @@ var GmailClient = class {
     let response = await send(false);
     if (response.status === 401) response = await send(true);
     if (response.status === 401) throw new AuthRequiredError();
-    if (!response.ok) throw new GmailApiError(response.status, `Gmail API ${response.status}`);
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      throw new GmailApiError(response.status, body?.error?.message ? `Gmail API ${response.status} : ${body.error.message}` : `Gmail API ${response.status}`);
+    }
     if (response.status === 204) return void 0;
     return await response.json();
   }
@@ -176,6 +179,20 @@ var GmailClient = class {
       snippet: decodeEntities(message.snippet ?? ""),
       date: Number(message.internalDate ?? 0)
     };
+  }
+  /**
+   * Demande à Gmail d'alerter le sujet Pub/Sub à chaque changement de la boîte
+   * de réception. Valable 7 jours : à renouveler.
+   */
+  async watch(topicName) {
+    const result = await this.request("/watch", {
+      method: "POST",
+      body: JSON.stringify({ topicName, labelIds: ["INBOX"], labelFilterBehavior: "INCLUDE" })
+    });
+    return { historyId: result.historyId, expiration: Number(result.expiration) };
+  }
+  async stopWatch() {
+    await this.request("/stop", { method: "POST" });
   }
   async getThread(id) {
     const thread = await this.request(`/threads/${id}?format=full`);
@@ -218,7 +235,10 @@ var DEFAULT_SETTINGS = {
   notifications: true,
   notificationStyle: "tab",
   notificationSeconds: 8,
-  notificationPosition: "top-right"
+  notificationPosition: "top-right",
+  instantPush: false,
+  relayUrl: "",
+  pubsubTopic: ""
 };
 async function getSettings() {
   const { settings } = await chrome.storage.local.get("settings");
@@ -270,6 +290,19 @@ async function saveToasts(toasts) {
 function mergeToasts(queue, incoming) {
   const known = new Set(queue.map((t2) => t2.key));
   return [...incoming.filter((t2) => !known.has(t2.key)), ...queue].slice(0, 20);
+}
+async function getRelayKeys() {
+  const { relayKeys } = await chrome.storage.local.get("relayKeys");
+  return relayKeys ?? null;
+}
+async function getPushStatus() {
+  const { pushStatus } = await chrome.storage.local.get("pushStatus");
+  return pushStatus ?? { state: "off" };
+}
+async function updatePushStatus(patch) {
+  const next = { ...await getPushStatus(), ...patch };
+  await chrome.storage.local.set({ pushStatus: next });
+  return next;
 }
 
 // src/lib/auth.ts
@@ -508,7 +541,39 @@ var fr = {
   colorYellow: "Jaune",
   colorBrown: "Brun",
   colorGrey: "Gris",
-  privacyNote: "Vos courriels ne quittent jamais votre navigateur : l\u2019extension parle directement \xE0 Google, sans serveur interm\xE9diaire."
+  pushSection: "Notifications instantan\xE9es",
+  pushHelp: "Avec un petit relais gratuit sur Cloudflare, Gmail pr\xE9vient l\u2019extension d\xE8s qu\u2019un courriel arrive, au lieu d\u2019attendre la v\xE9rification r\xE9guli\xE8re. Le relais ne re\xE7oit qu\u2019un signal, jamais vos courriels. Guide pas \xE0 pas : README, section \xAB Notifications instantan\xE9es \xBB.",
+  pushStep1: "1. Cl\xE9s du relais",
+  pushGenerateKeys: "G\xE9n\xE9rer les cl\xE9s",
+  pushRegenerateKeys: "R\xE9g\xE9n\xE9rer les cl\xE9s",
+  pushRegenerateConfirm: "De nouvelles cl\xE9s remplaceront les actuelles : il faudra les recopier dans Cloudflare et mettre \xE0 jour l\u2019abonnement Pub/Sub. Continuer ?",
+  pushKeysHint: "\xC0 coller dans Cloudflare (Worker \u203A Settings \u203A Variables and Secrets, type \xAB Secret \xBB). Ne les partagez pas.",
+  pushStep2: "2. Relais et Pub/Sub",
+  pushRelayUrl: "Adresse du relais Cloudflare",
+  pushTopic: "Sujet Pub/Sub (Google Cloud)",
+  pushInvalidUrl: "Adresse invalide : elle doit commencer par https://",
+  pushInvalidTopic: "Sujet invalide : il doit avoir la forme projects/<projet>/topics/<sujet>.",
+  pushEndpoint: "Adresse de livraison \xE0 d\xE9clarer dans l\u2019abonnement Pub/Sub",
+  pushEndpointHint: "Google Cloud \u203A Pub/Sub \u203A Abonnements \u203A Cr\xE9er : type \xAB Push \xBB, point de terminaison = cette adresse.",
+  pushStep3: "3. Activation",
+  pushEnable: "Activer les notifications instantan\xE9es",
+  pushDisable: "D\xE9sactiver",
+  pushWorking: "Un instant\u2026",
+  pushTest: "Tester le relais",
+  pushTesting: "Test en cours (15 s au plus)\u2026",
+  pushTestOk: "Le relais fonctionne : alerte re\xE7ue en {0} s.",
+  pushTestFail: "Aucune alerte re\xE7ue. V\xE9rifiez la messagerie push de Brave et les variables du relais.",
+  pushOff: "D\xE9sactiv\xE9es : l\u2019extension v\xE9rifie Gmail \xE0 intervalle r\xE9gulier.",
+  pushActive: "Actives : Gmail pr\xE9vient l\u2019extension d\xE8s qu\u2019un courriel arrive.",
+  pushLast: "Derni\xE8re alerte re\xE7ue : {0}",
+  pushErrMissingConfig: "Configuration incompl\xE8te : g\xE9n\xE9rez les cl\xE9s, puis enregistrez l\u2019adresse du relais et le sujet Pub/Sub.",
+  pushErrRelayUnreachable: "Relais injoignable : v\xE9rifiez l\u2019adresse du Worker Cloudflare et qu\u2019il est d\xE9ploy\xE9.",
+  pushErrRelayAuth: "Le relais refuse les cl\xE9s : v\xE9rifiez RELAY_SECRET, VAPID_PUBLIC_KEY, VAPID_PRIVATE_JWK et l\u2019espace KV SUBSCRIPTIONS dans Cloudflare.",
+  pushErrPushUnavailable: "Le navigateur refuse les alertes push. Dans Brave : brave://settings/privacy \u203A \xAB Utiliser les services Google pour la messagerie push \xBB, puis red\xE9marrez Brave.",
+  pushErrWatchFailed: "Gmail refuse de pr\xE9venir le sujet Pub/Sub : v\xE9rifiez le nom du sujet et que gmail-api-push@system.gserviceaccount.com a le r\xF4le \xAB \xC9diteur Pub/Sub \xBB sur ce sujet.",
+  pushErrNoAccounts: "Ajoutez d\u2019abord un compte Gmail.",
+  pushBraveHint: "Brave : activez \xAB Utiliser les services Google pour la messagerie push \xBB dans brave://settings/privacy.",
+  privacyNote: "Vos courriels ne quittent jamais votre navigateur : l\u2019extension parle directement \xE0 Google. Le relais facultatif des notifications instantan\xE9es ne re\xE7oit qu\u2019un signal, jamais vos courriels."
 };
 var en = {
   appName: "Gmail Preview",
@@ -625,7 +690,39 @@ var en = {
   colorYellow: "Yellow",
   colorBrown: "Brown",
   colorGrey: "Grey",
-  privacyNote: "Your messages never leave your browser: the extension talks directly to Google, with no server in between."
+  pushSection: "Instant notifications",
+  pushHelp: "With a small free relay on Cloudflare, Gmail alerts the extension as soon as a message arrives, instead of waiting for the regular check. The relay only receives a signal, never your messages. Step-by-step guide: README, \u201CInstant notifications\u201D section.",
+  pushStep1: "1. Relay keys",
+  pushGenerateKeys: "Generate keys",
+  pushRegenerateKeys: "Regenerate keys",
+  pushRegenerateConfirm: "New keys will replace the current ones: you will need to copy them into Cloudflare again and update the Pub/Sub subscription. Continue?",
+  pushKeysHint: "Paste into Cloudflare (Worker \u203A Settings \u203A Variables and Secrets, type \u201CSecret\u201D). Do not share them.",
+  pushStep2: "2. Relay and Pub/Sub",
+  pushRelayUrl: "Cloudflare relay address",
+  pushTopic: "Pub/Sub topic (Google Cloud)",
+  pushInvalidUrl: "Invalid address: it must start with https://",
+  pushInvalidTopic: "Invalid topic: it must look like projects/<project>/topics/<topic>.",
+  pushEndpoint: "Delivery address to declare in the Pub/Sub subscription",
+  pushEndpointHint: "Google Cloud \u203A Pub/Sub \u203A Subscriptions \u203A Create: type \u201CPush\u201D, endpoint = this address.",
+  pushStep3: "3. Activation",
+  pushEnable: "Turn on instant notifications",
+  pushDisable: "Turn off",
+  pushWorking: "One moment\u2026",
+  pushTest: "Test the relay",
+  pushTesting: "Testing (15 s at most)\u2026",
+  pushTestOk: "The relay works: alert received in {0} s.",
+  pushTestFail: "No alert received. Check Brave\u2019s push messaging and the relay variables.",
+  pushOff: "Off: the extension checks Gmail at regular intervals.",
+  pushActive: "On: Gmail alerts the extension as soon as a message arrives.",
+  pushLast: "Last alert received: {0}",
+  pushErrMissingConfig: "Incomplete setup: generate the keys, then save the relay address and the Pub/Sub topic.",
+  pushErrRelayUnreachable: "Relay unreachable: check the Cloudflare Worker address and that it is deployed.",
+  pushErrRelayAuth: "The relay rejects the keys: check RELAY_SECRET, VAPID_PUBLIC_KEY, VAPID_PRIVATE_JWK and the SUBSCRIPTIONS KV namespace in Cloudflare.",
+  pushErrPushUnavailable: "The browser refuses push alerts. In Brave: brave://settings/privacy \u203A \u201CUse Google services for push messaging\u201D, then restart Brave.",
+  pushErrWatchFailed: "Gmail refuses to alert the Pub/Sub topic: check the topic name and that gmail-api-push@system.gserviceaccount.com has the \u201CPub/Sub Publisher\u201D role on it.",
+  pushErrNoAccounts: "Add a Gmail account first.",
+  pushBraveHint: "Brave: turn on \u201CUse Google services for push messaging\u201D in brave://settings/privacy.",
+  privacyNote: "Your messages never leave your browser: the extension talks directly to Google. The optional instant-notification relay only receives a signal, never your messages."
 };
 var dictionaries = { fr, en };
 var current = "fr";
@@ -663,6 +760,167 @@ function parseNotificationId(id) {
   return { email, threadId: kind === "msg" ? rest ?? null : null };
 }
 
+// src/lib/relay-keys.ts
+function fromBase64url(value) {
+  const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
+  const binary = atob(base64 + "=".repeat((4 - base64.length % 4) % 4));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+function normalizeRelayUrl(value) {
+  try {
+    const url = new URL(value.trim());
+    if (url.protocol !== "https:") return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+function isPubsubTopic(value) {
+  return /^projects\/[a-z][a-z0-9-]{4,28}[a-z0-9]\/topics\/[A-Za-z][\w.~+%-]{2,254}$/.test(value.trim());
+}
+
+// src/lib/push.ts
+var PushSetupError = class extends Error {
+  constructor(code, detail = "") {
+    super(detail || code);
+    this.code = code;
+    this.name = "PushSetupError";
+  }
+  code;
+};
+var registration = globalThis.registration;
+async function config() {
+  const settings = await getSettings();
+  const keys = await getRelayKeys();
+  const url = normalizeRelayUrl(settings.relayUrl);
+  if (!keys || !url || !isPubsubTopic(settings.pubsubTopic)) throw new PushSetupError("missing_config");
+  return { url, topic: settings.pubsubTopic.trim(), keys };
+}
+async function relayCall(cfg, path, body) {
+  let response;
+  try {
+    response = await fetch(`${cfg.url}${path}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${cfg.keys.secret}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(1e4)
+    });
+  } catch (error) {
+    throw new PushSetupError("relay_unreachable", error instanceof Error ? error.message : "");
+  }
+  if (response.status === 401) throw new PushSetupError("relay_auth");
+  if (!response.ok) throw new PushSetupError("relay_unreachable", `HTTP ${response.status}`);
+  return response;
+}
+async function checkRelay(cfg) {
+  let info;
+  try {
+    const response = await fetch(`${cfg.url}/`, { signal: AbortSignal.timeout(1e4) });
+    info = await response.json();
+  } catch (error) {
+    throw new PushSetupError("relay_unreachable", error instanceof Error ? error.message : "");
+  }
+  if (info.service !== "apercu-gmail-relay") throw new PushSetupError("relay_unreachable", "not_a_relay");
+  if (!info.configured) throw new PushSetupError("relay_auth", "relay_not_configured");
+  if (info.vapidPublicKey !== cfg.keys.vapidPublicKey) throw new PushSetupError("relay_auth", "vapid_mismatch");
+}
+function sameKey(a, b) {
+  if (!a) return false;
+  const x = new Uint8Array(a);
+  return x.length === b.length && x.every((v, i) => v === b[i]);
+}
+async function ensureSubscription(cfg) {
+  const key = fromBase64url(cfg.keys.vapidPublicKey);
+  try {
+    const existing = await registration.pushManager.getSubscription();
+    if (existing && sameKey(existing.options.applicationServerKey, key)) return existing;
+    await existing?.unsubscribe();
+    return await registration.pushManager.subscribe({ userVisibleOnly: false, applicationServerKey: key });
+  } catch (error) {
+    throw new PushSetupError("push_unavailable", error instanceof Error ? error.message : "");
+  }
+}
+async function watchAll(cfg) {
+  const accounts = await getAccounts();
+  if (!accounts.length) throw new PushSetupError("no_accounts");
+  const failures = [];
+  let until = Number.POSITIVE_INFINITY;
+  for (const { email } of accounts) {
+    const client = new GmailClient((forceRefresh) => getToken(email, { forceRefresh }));
+    try {
+      const { expiration } = await client.watch(cfg.topic);
+      until = Math.min(until, expiration);
+    } catch (error) {
+      if (error instanceof AuthRequiredError) continue;
+      failures.push(`${email} : ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  if (failures.length === accounts.length) throw new PushSetupError("watch_failed", failures.join(" ; "));
+  return Number.isFinite(until) ? until : Date.now();
+}
+async function setup() {
+  const cfg = await config();
+  await checkRelay(cfg);
+  const subscription = await ensureSubscription(cfg);
+  const emails = (await getAccounts()).map((a) => a.email);
+  await relayCall(cfg, "/register", { emails, subscription: { endpoint: subscription.endpoint } });
+  const watchedUntil = await watchAll(cfg);
+  return updatePushStatus({ state: "active", code: void 0, detail: void 0, watchedUntil });
+}
+async function recordError(error) {
+  if (error instanceof PushSetupError) return updatePushStatus({ state: "error", code: error.code, detail: error.message === error.code ? void 0 : error.message });
+  return updatePushStatus({ state: "error", code: "relay_unreachable", detail: error instanceof Error ? error.message : String(error) });
+}
+async function enableInstantPush() {
+  try {
+    return await setup();
+  } catch (error) {
+    return recordError(error);
+  }
+}
+async function renewInstantPush() {
+  const settings = await getSettings();
+  if (!settings.instantPush) return;
+  await enableInstantPush();
+}
+async function disableInstantPush() {
+  const cfg = await config().catch(() => null);
+  for (const { email } of await getAccounts()) {
+    await new GmailClient((forceRefresh) => getToken(email, { forceRefresh })).stopWatch().catch(() => void 0);
+  }
+  const subscription = await registration.pushManager.getSubscription().catch(() => null);
+  if (cfg && subscription) await relayCall(cfg, "/unregister", { endpoint: subscription.endpoint }).catch(() => void 0);
+  await subscription?.unsubscribe().catch(() => void 0);
+  return updatePushStatus({ state: "off", code: void 0, detail: void 0, watchedUntil: void 0 });
+}
+async function stopWatching(email) {
+  if (!(await getSettings()).instantPush) return;
+  await new GmailClient((forceRefresh) => getToken(email, { forceRefresh })).stopWatch().catch(() => void 0);
+}
+var testWaiter = null;
+async function notePushReceived() {
+  testWaiter?.(true);
+  testWaiter = null;
+  await updatePushStatus({ lastPushAt: Date.now() });
+}
+async function testInstantPush() {
+  try {
+    const cfg = await config();
+    await checkRelay(cfg);
+    const subscription = await ensureSubscription(cfg);
+    const received = new Promise((resolve) => {
+      testWaiter = resolve;
+      setTimeout(() => resolve(false), 15e3);
+    });
+    await relayCall(cfg, "/test", { subscription: { endpoint: subscription.endpoint } });
+    return { received: await received, status: await getPushStatus() };
+  } catch (error) {
+    return { received: false, status: await recordError(error) };
+  }
+}
+
 // src/lib/toast-window.ts
 var TOAST_WIDTH = 400;
 var MARGIN = 12;
@@ -692,12 +950,14 @@ async function workArea() {
 
 // src/background.ts
 var ALARM = "poll";
+var WATCH_ALARM = "gmail-watch";
 var BADGE_RED = "#d93025";
 var BADGE_ORANGE = "#e37400";
 async function scheduleAlarm() {
   const { pollMinutes } = await getSettings();
   await chrome.alarms.clear(ALARM);
   await chrome.alarms.create(ALARM, { periodInMinutes: pollMinutes, delayInMinutes: pollMinutes });
+  if (!await chrome.alarms.get(WATCH_ALARM)) await chrome.alarms.create(WATCH_ALARM, { periodInMinutes: 12 * 60 });
 }
 function badgeText(count) {
   if (count <= 0) return "";
@@ -893,46 +1153,53 @@ async function checkNewMessages(email, client, settings, previous) {
   return next;
 }
 var polling = null;
+var pollAgain = false;
 function pollAll() {
-  if (!polling) {
-    polling = (async () => {
-      const accounts = await getAccounts();
-      const previous = await getAccountStates();
-      const settings = await getSettings();
-      setLanguage(settings.language);
-      const seen = await getSeen();
-      const nextSeen = {};
-      const results = await Promise.all(
-        accounts.map(async ({ email }) => {
-          const client = new GmailClient((forceRefresh) => getToken(email, { forceRefresh }));
-          try {
-            const unread = await client.getInboxUnread();
-            try {
-              nextSeen[email] = await checkNewMessages(email, client, settings, seen[email]);
-            } catch {
-              if (seen[email]) nextSeen[email] = seen[email];
-            }
-            return { email, unread, status: "ok", checkedAt: Date.now() };
-          } catch (error) {
-            const reauth = error instanceof AuthRequiredError || error instanceof AuthError;
-            console.warn("V\xE9rification impossible pour un compte", error instanceof Error ? error.name : error);
-            return {
-              email,
-              unread: previous[email]?.unread ?? null,
-              status: reauth ? "reauth" : "error",
-              checkedAt: Date.now()
-            };
-          }
-        })
-      );
-      await saveAccountStates(Object.fromEntries(results.map((s) => [s.email, s])));
-      for (const { email } of accounts) if (!nextSeen[email] && seen[email]) nextSeen[email] = seen[email];
-      await saveSeen(nextSeen);
-      await updateBadge(results);
-    })().finally(() => {
-      polling = null;
-    });
+  if (polling) {
+    pollAgain = true;
+    return polling;
   }
+  polling = (async () => {
+    const accounts = await getAccounts();
+    const previous = await getAccountStates();
+    const settings = await getSettings();
+    setLanguage(settings.language);
+    const seen = await getSeen();
+    const nextSeen = {};
+    const results = await Promise.all(
+      accounts.map(async ({ email }) => {
+        const client = new GmailClient((forceRefresh) => getToken(email, { forceRefresh }));
+        try {
+          const unread = await client.getInboxUnread();
+          try {
+            nextSeen[email] = await checkNewMessages(email, client, settings, seen[email]);
+          } catch {
+            if (seen[email]) nextSeen[email] = seen[email];
+          }
+          return { email, unread, status: "ok", checkedAt: Date.now() };
+        } catch (error) {
+          const reauth = error instanceof AuthRequiredError || error instanceof AuthError;
+          console.warn("V\xE9rification impossible pour un compte", error instanceof Error ? error.name : error);
+          return {
+            email,
+            unread: previous[email]?.unread ?? null,
+            status: reauth ? "reauth" : "error",
+            checkedAt: Date.now()
+          };
+        }
+      })
+    );
+    await saveAccountStates(Object.fromEntries(results.map((s) => [s.email, s])));
+    for (const { email } of accounts) if (!nextSeen[email] && seen[email]) nextSeen[email] = seen[email];
+    await saveSeen(nextSeen);
+    await updateBadge(results);
+  })().finally(() => {
+    polling = null;
+    if (pollAgain) {
+      pollAgain = false;
+      void pollAll();
+    }
+  });
   return polling;
 }
 function toErrorResponse(error) {
@@ -949,12 +1216,23 @@ async function handle(request) {
     case "addAccount": {
       const result = await addAccount();
       await pollAll();
+      void renewInstantPush();
       return result;
     }
     case "removeAccount":
+      await stopWatching(request.email);
       await removeAccount(request.email);
       await pollAll();
+      void renewInstantPush();
       return null;
+    case "enablePush":
+      await saveSettings({ instantPush: true });
+      return enableInstantPush();
+    case "disablePush":
+      await saveSettings({ instantPush: false });
+      return disableInstantPush();
+    case "testPush":
+      return testInstantPush();
     case "refresh":
       await pollAll();
       return null;
@@ -1014,6 +1292,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === ALARM) void pollAll();
+  if (alarm.name === WATCH_ALARM) void renewInstantPush();
+});
+globalThis.addEventListener("push", (event) => {
+  const work = notePushReceived().then(pollAll);
+  try {
+    event.waitUntil(work);
+  } catch {
+  }
 });
 async function migrate() {
   const { migrations } = await chrome.storage.local.get("migrations");
@@ -1035,7 +1321,7 @@ chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === "install") void chrome.runtime.openOptionsPage();
 });
 chrome.runtime.onStartup.addListener(() => {
-  void scheduleAlarm().then(pollAll);
+  void scheduleAlarm().then(pollAll).then(renewInstantPush);
 });
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local" || !changes.settings) return;
