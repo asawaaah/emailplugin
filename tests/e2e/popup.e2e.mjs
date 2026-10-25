@@ -315,15 +315,15 @@ const waitFor = async (check, label, timeout = 8000) => {
 
 await refresh();
 assert.equal(await systemCount(), 0, 'rien pour les courriels déjà là');
-// Pastille du compteur : fond blanc, chiffre rouge.
+// Pastille du compteur : fond rouge, chiffre blanc.
 const badge = await worker.evaluate(async () => ({
   text: await chrome.action.getBadgeText({}),
   background: await chrome.action.getBadgeBackgroundColor({}),
   color: await chrome.action.getBadgeTextColor({}),
 }));
 assert.ok(Number(badge.text) > 0, `compteur affiché (${badge.text})`);
-assert.deepEqual(badge.background, [255, 255, 255, 255]);
-assert.deepEqual(badge.color, [217, 48, 37, 255]);
+assert.deepEqual(badge.background, [217, 48, 37, 255]);
+assert.deepEqual(badge.color, [255, 255, 255, 255]);
 
 const site = await context.newPage();
 site.on('pageerror', (e) => errors.push(`site: ${e.message}`));

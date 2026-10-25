@@ -951,7 +951,7 @@ async function workArea() {
 // src/background.ts
 var ALARM = "poll";
 var WATCH_ALARM = "gmail-watch";
-var BADGE_BACKGROUND = "#ffffff";
+var BADGE_TEXT = "#ffffff";
 var BADGE_RED = "#d93025";
 var BADGE_ORANGE = "#e37400";
 async function scheduleAlarm() {
@@ -972,8 +972,8 @@ async function updateBadge(states) {
   let text = badgeText(total);
   if (!text && needsAttention) text = "!";
   await chrome.action.setBadgeText({ text });
-  await chrome.action.setBadgeBackgroundColor({ color: BADGE_BACKGROUND });
-  await chrome.action.setBadgeTextColor({ color: needsAttention ? BADGE_ORANGE : BADGE_RED });
+  await chrome.action.setBadgeBackgroundColor({ color: needsAttention ? BADGE_ORANGE : BADGE_RED });
+  await chrome.action.setBadgeTextColor({ color: BADGE_TEXT });
   const lines = states.map(
     (s) => s.status === "ok" ? `${s.email} : ${s.unread ?? 0}` : `${s.email} : ${t("reauthNeeded")}`
   );

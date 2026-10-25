@@ -26,8 +26,8 @@ import type { AccountState, MessageMeta, SeenState, Settings, Toast } from './li
 const ALARM = 'poll';
 /** Renouvellement des abonnements Gmail du relais (valables 7 jours). */
 const WATCH_ALARM = 'gmail-watch';
-/** Pastille du compteur : fond blanc, chiffre rouge (orange si un compte demande une reconnexion). */
-const BADGE_BACKGROUND = '#ffffff';
+/** Pastille du compteur : fond rouge (orange si un compte demande une reconnexion), chiffre blanc. */
+const BADGE_TEXT = '#ffffff';
 const BADGE_RED = '#d93025';
 const BADGE_ORANGE = '#e37400';
 
@@ -52,8 +52,8 @@ async function updateBadge(states: AccountState[]): Promise<void> {
   let text = badgeText(total);
   if (!text && needsAttention) text = '!';
   await chrome.action.setBadgeText({ text });
-  await chrome.action.setBadgeBackgroundColor({ color: BADGE_BACKGROUND });
-  await chrome.action.setBadgeTextColor({ color: needsAttention ? BADGE_ORANGE : BADGE_RED });
+  await chrome.action.setBadgeBackgroundColor({ color: needsAttention ? BADGE_ORANGE : BADGE_RED });
+  await chrome.action.setBadgeTextColor({ color: BADGE_TEXT });
 
   const lines = states.map((s) =>
     s.status === 'ok' ? `${s.email} : ${s.unread ?? 0}` : `${s.email} : ${t('reauthNeeded')}`,
