@@ -3,7 +3,7 @@
   "name": "__MSG_extName__",
   "short_name": "__MSG_extShortName__",
   "description": "__MSG_extDescription__",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "default_locale": "fr",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqU4UrvSLogpJ2rNGYJv+mI5HXbbZ7/7zGDQGN7ABfbDLheoa4NsH5s2i3sPNb7Av7bGcAUbe/hK2jkMV62NfDC/dETx6nPtlgoh430BLb0if7k1z2bC5Fq7OM2+3rf4Ixsb0P81CW4yuj5qFVatIGahblSMGI8F1nc14K5eqqDBKHQgHqn7yPWoBE4e+R9OQTELPnlgsHFgHPq7wATG4EyRTEZml8i3JX1rtFz1BiImcShJG8QooM/G1VD4AB84IgGH0Dgvhx7qSLqVf8bjoa0SKxPBnVN6s3AS+msgaivqH6MYdimwwrjEtzt/Sw4W3vQbatpjmYoNLaJv9iMEopwIDAQAB",
   "minimum_chrome_version": "120",

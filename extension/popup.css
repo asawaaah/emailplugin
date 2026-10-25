@@ -10,7 +10,7 @@ body.popup { width: 800px; }
   padding: 6px 6px 6px 12px;
   border-bottom: 1px solid var(--outline-soft);
 }
-.app-logo { color: #ea4335; margin-right: 8px; }
+.app-logo { display: block; margin-right: 8px; }
 .app-title { flex: 1; margin: 0; font-size: 16px; font-weight: 600; }
 
 /* Bascule « Non lus / Tous » */

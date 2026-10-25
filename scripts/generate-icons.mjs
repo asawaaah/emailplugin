@@ -1,11 +1,16 @@
-// Génère les icônes PNG de l'extension à partir d'un SVG (enveloppe sur fond rouge).
+// Génère les icônes PNG de l'extension : le « M » multicolore de Gmail, sur fond
+// transparent. Usage personnel : une publication sur le Chrome Web Store
+// exigerait une icône propre (le logo Gmail est une marque de Google).
 import sharp from 'sharp';
 import { mkdir } from 'node:fs/promises';
 
-const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <rect x="4" y="4" width="120" height="120" rx="28" fill="#d93025"/>
-  <rect x="22" y="34" width="84" height="60" rx="8" fill="#ffffff"/>
-  <path d="M26 40 L64 68 L102 40" fill="none" stroke="#d93025" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+// Logo dessiné sur une zone de 88 × 66 (repère 52,42), centré dans un carré.
+const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="48 30 96 96">
+  <path fill="#4285f4" d="M58 108h14V74L52 59v43c0 3.32 2.69 6 6 6"/>
+  <path fill="#34a853" d="M120 108h14c3.32 0 6-2.69 6-6V59l-20 15"/>
+  <path fill="#fbbc04" d="M120 48v26l20-15v-8c0-7.42-8.47-11.65-14.4-7.2"/>
+  <path fill="#ea4335" d="M72 74V48l24 18 24-18v26L96 92"/>
+  <path fill="#c5221f" d="M52 51v8l20 15V48l-5.6-4.2c-5.94-4.45-14.4-.22-14.4 7.2"/>
 </svg>`;
 
 await mkdir('static/icons', { recursive: true });

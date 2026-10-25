@@ -819,7 +819,7 @@ function renderHeader() {
   return h(
     "header",
     { class: "app-header" },
-    h("span", { class: "app-logo" }, icon("mail", 22)),
+    h("img", { class: "app-logo", src: "icons/icon-32.png", width: 22, height: 22, alt: "" }),
     h("h1", { class: "app-title" }, t("appName")),
     renderFilter(),
     iconButton("refresh", t("refresh"), () => void loadAll()),
