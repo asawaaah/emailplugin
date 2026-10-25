@@ -148,7 +148,7 @@ const fr = {
   pushErrRelayUnreachable: 'Relais injoignable : vérifiez l’adresse du Worker Cloudflare et qu’il est déployé.',
   pushErrRelayAuth: 'Le relais refuse les clés : vérifiez RELAY_SECRET, VAPID_PUBLIC_KEY, VAPID_PRIVATE_JWK et l’espace KV SUBSCRIPTIONS dans Cloudflare.',
   pushErrPushUnavailable: 'Le navigateur refuse les alertes push. Dans Brave : brave://settings/privacy › « Utiliser les services Google pour la messagerie push », puis redémarrez Brave.',
-  pushErrWatchFailed: 'Gmail refuse de prévenir le sujet Pub/Sub : vérifiez le nom du sujet et que gmail-api-push@system.gserviceaccount.com a le rôle « Éditeur Pub/Sub » sur ce sujet.',
+  pushErrWatchFailed: 'Gmail refuse de prévenir le sujet Pub/Sub : vérifiez le nom du sujet et que gmail-api-push@system.gserviceaccount.com a le rôle « Diffuseur Pub/Sub » (Pub/Sub Publisher) sur ce sujet.',
   pushErrNoAccounts: 'Ajoutez d’abord un compte Gmail.',
   pushBraveHint: 'Brave : activez « Utiliser les services Google pour la messagerie push » dans brave://settings/privacy.',
   privacyNote: 'Vos courriels ne quittent jamais votre navigateur : l’extension parle directement à Google. Le relais facultatif des notifications instantanées ne reçoit qu’un signal, jamais vos courriels.',

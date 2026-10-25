@@ -173,10 +173,16 @@ Toujours dans le projet **Apercu Gmail** (celui de l'ID client).
 1. Activer Pub/Sub : <https://console.cloud.google.com/apis/library/pubsub.googleapis.com> › **Activer**. Si Google demande un compte de facturation, l'associer, puis créer une alerte : **Facturation › Budgets et alertes › Créer un budget**, montant **1 $**.
 2. Créer le sujet : <https://console.cloud.google.com/cloudpubsub/topic/list> › **Créer un sujet**. ID du sujet : `gmail-push` ; **décocher** « Ajouter un abonnement par défaut » ; **Créer**.
 3. Copier le **nom complet** du sujet, de la forme `projects/<id-du-projet>/topics/gmail-push`.
-4. Autoriser Gmail à publier : sur la page du sujet, panneau **Autorisations** › **Ajouter un compte principal** :
-   - Nouveaux comptes principaux : `gmail-api-push@system.gserviceaccount.com`
-   - Rôle : **Pub/Sub › Éditeur Pub/Sub** (*Pub/Sub Publisher*)
-   - **Enregistrer**.
+4. Autoriser Gmail à publier dans ce sujet. Sans cette autorisation, Gmail ne peut pas envoyer ses alertes.
+   1. Ouvrir la liste des sujets : <https://console.cloud.google.com/cloudpubsub/topic/list> (projet **Apercu Gmail** sélectionné en haut).
+   2. **Cocher la case** à gauche du sujet `gmail-push` (sans cliquer sur son nom).
+   3. Un panneau s'ouvre à droite, onglet **Autorisations**. S'il n'apparaît pas, cliquer **Afficher le panneau d'informations** en haut à droite.
+   4. **Ajouter un compte principal**.
+   5. Champ **Nouveaux comptes principaux** : coller `gmail-api-push@system.gserviceaccount.com`.
+   6. Champ **Sélectionner un rôle** : taper `Pub/Sub` dans le filtre, puis choisir **Diffuseur Pub/Sub** (*Pub/Sub Publisher* en anglais). Pas « Éditeur Pub/Sub », ni « Éditeur ».
+   7. **Enregistrer**. Le panneau affiche alors le rôle **Diffuseur Pub/Sub** avec ce compte.
+
+   > Autre chemin, si le panneau reste introuvable : menu ☰ › **IAM et administration** › **IAM** › **Accorder l'accès**, même compte et même rôle. L'autorisation vaut alors pour tous les sujets du projet, ce qui suffit pour un usage personnel.
 
 ### D. Extension : relais et sujet
 
@@ -208,7 +214,7 @@ L'abonnement de Gmail aux alertes dure 7 jours : l'extension le renouvelle seule
 | Relais injoignable | Vérifier l'adresse du Worker (B.6) et qu'il est déployé. |
 | Le relais refuse les clés | Vérifier les 3 secrets et la liaison KV `SUBSCRIPTIONS` (B.4, B.5), puis redéployer. Si les clés ont été régénérées, les recopier dans Cloudflare. |
 | Le navigateur refuse les alertes push | Étape F, puis redémarrer Brave. |
-| Gmail refuse de prévenir le sujet Pub/Sub | Vérifier le nom complet du sujet (C.3) et l'autorisation de `gmail-api-push@system.gserviceaccount.com` (C.4). |
+| Gmail refuse de prévenir le sujet Pub/Sub | Vérifier le nom complet du sujet (C.3) et l'autorisation de `gmail-api-push@system.gserviceaccount.com` avec le rôle **Diffuseur Pub/Sub** (C.4). |
 | Test : aucune alerte reçue | Étape F ; vérifier aussi `VAPID_PUBLIC_KEY` dans Cloudflare. |
 | Actif, mais pas de bulle à l'arrivée d'un courriel | Vérifier l'abonnement Pub/Sub (étape E) : type Push et adresse de livraison exacte. Google Cloud › Pub/Sub › Abonnements affiche les livraisons en erreur. |
 
