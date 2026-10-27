@@ -150,7 +150,7 @@ Google Cloud, Cloudflare et Pub/Sub ne se configurent **qu'une fois** : un autre
 Bon à savoir :
 
 - Le fichier contient les **clés du relais** (pas vos mots de passe ni vos courriels). Le garder pour vous : jamais sur GitHub, ni dans un courriel partagé.
-- **Synchronisation automatique** : si la case « Partager la configuration avec mes autres navigateurs synchronisés » est cochée et que la synchronisation du navigateur inclut les extensions, un nouvel appareil connecté au même profil reprend la configuration tout seul, sans fichier. Brave ne synchronise pas toujours les données des extensions : le fichier reste la méthode sûre.
+- **Synchronisation automatique** (désactivée par défaut) : si vous cochez la case « Partager la configuration avec mes autres navigateurs synchronisés » sur l'appareil configuré, la configuration, clés du relais comprises, passe par la synchronisation de votre compte de navigateur. Si la synchronisation du navigateur inclut les extensions, un nouvel appareil connecté au même profil reprend la configuration tout seul, sans fichier. Brave ne synchronise pas toujours les données des extensions : le fichier reste la méthode sûre.
 - Le relais accepte jusqu'à 5 navigateurs par adresse Gmail pour les notifications instantanées.
 
 ## Notifications instantanées (facultatif)

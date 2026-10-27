@@ -540,7 +540,7 @@ var fr = {
   importErrVersion: "Configuration cr\xE9\xE9e par une version plus r\xE9cente : mettez d\u2019abord l\u2019extension \xE0 jour.",
   importErrNoClientId: "La configuration ne contient pas d\u2019identifiant client Google valide.",
   syncLabel: "Partager la configuration avec mes autres navigateurs synchronis\xE9s",
-  syncHelp: "Si la synchronisation du navigateur inclut les extensions, un nouvel appareil reprend la configuration tout seul. Sinon, utilisez le fichier.",
+  syncHelp: "Facultatif. La configuration, cl\xE9s du relais comprises, passe alors par la synchronisation de votre compte de navigateur ; si elle inclut les extensions, un nouvel appareil la reprend tout seul. Sinon, utilisez le fichier.",
   syncedFrom: "Configuration reprise de la synchronisation le {0}.",
   privacyNote: "Vos courriels ne quittent jamais votre navigateur : l\u2019extension parle directement \xE0 Google. Le relais facultatif des notifications instantan\xE9es ne re\xE7oit qu\u2019un signal, jamais vos courriels."
 };
@@ -706,7 +706,7 @@ var en = {
   importErrVersion: "Configuration created by a newer version: update the extension first.",
   importErrNoClientId: "The configuration has no valid Google client ID.",
   syncLabel: "Share the configuration with my other synced browsers",
-  syncHelp: "If browser sync includes extensions, a new device picks up the configuration by itself. Otherwise, use the file.",
+  syncHelp: "Optional. The configuration, relay keys included, then goes through your browser account\u2019s sync; if it includes extensions, a new device picks it up by itself. Otherwise, use the file.",
   syncedFrom: "Configuration restored from sync on {0}.",
   privacyNote: "Your messages never leave your browser: the extension talks directly to Google. The optional instant-notification relay only receives a signal, never your messages."
 };
@@ -785,7 +785,7 @@ var DEFAULT_SETTINGS = {
   instantPush: false,
   relayUrl: "",
   pubsubTopic: "",
-  syncConfig: true
+  syncConfig: false
 };
 async function getSettings() {
   const { settings: settings2 } = await chrome.storage.local.get("settings");

@@ -536,11 +536,16 @@ assert.equal(exported.settings.clientId, 'test.apps.googleusercontent.com');
 assert.deepEqual(exported.accounts.map((a) => a.email), ['bob.travail@gmail.com', 'alice@gmail.com']);
 assert.equal(exported.accounts[1].color, '#d93025', 'couleur choisie exportée');
 assert.equal(exported.relayKeys.secret, secret, 'clés du relais exportées');
+assert.equal(exported.settings.syncConfig, false);
 assert.ok(!JSON.stringify(exported).includes('tok-'), 'aucun jeton d’accès dans le fichier');
 await options.waitForSelector('text=Fichier enregistré');
 await options.locator('#transfer-status').scrollIntoViewIfNeeded();
 await options.screenshot({ path: `${OUT}/11-autres-appareils${suffix}.png`, fullPage: true });
-// La même configuration est déposée dans l'espace synchronisé du navigateur.
+// Synchronisation désactivée par défaut : rien dans l'espace synchronisé.
+assert.equal(await options.locator('#sync-config').isChecked(), false);
+assert.equal(await worker.evaluate(async () => (await chrome.storage.sync.get('config')).config), undefined);
+// Une fois la case cochée, la configuration y est déposée.
+await options.locator('#sync-config').check();
 await waitFor(async () => (await worker.evaluate(async () => (await chrome.storage.sync.get('config')).config?.settings?.clientId)) === 'test.apps.googleusercontent.com', 'configuration synchronisée');
 await rm(exportPath);
 
@@ -596,7 +601,7 @@ async function freshBrowser() {
 {
   const { ctx, sw, fresh } = await freshBrowser();
   await fresh.waitForSelector('text=Déjà configuré sur un autre appareil ?');
-  await sw.evaluate((config) => chrome.storage.sync.set({ config }), exported);
+  await sw.evaluate((config) => chrome.storage.sync.set({ config }), { ...exported, settings: { ...exported.settings, syncConfig: true } });
   await fresh.waitForSelector('text=Configuration reprise de la synchronisation', { timeout: 10_000 });
   const stored = await sw.evaluate(() => chrome.storage.local.get(['settings', 'accounts']));
   assert.equal(stored.settings.clientId, 'test.apps.googleusercontent.com');
