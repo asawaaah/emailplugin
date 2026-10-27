@@ -5,6 +5,7 @@ import { avatar, h, iconButton } from '../lib/dom';
 import { setLanguage, t } from '../lib/i18n';
 import { card, copyField, status } from './fields';
 import { instantPushCard } from './instant-push';
+import { transferCard } from './transfer';
 import { RemoteError, send } from '../lib/messages';
 import { MAX_THREADS_CHOICES, NOTIFICATION_SECONDS_CHOICES, POLL_CHOICES, getAccounts, getSettings, moveAccount, saveAccounts, saveSettings, setAccountColor } from '../lib/storage';
 import type { Language, NotificationPosition, NotificationStyle, Settings } from '../lib/types';
@@ -216,14 +217,24 @@ async function render(): Promise<void> {
   const settings = await getSettings();
   setLanguage(settings.language);
   document.title = t('optionsTitle');
-  app.replaceChildren(
+  // Appareil neuf : l'import d'une configuration existante est proposé en premier.
+  const transfer = await transferCard(settings, render);
+  const sections: Array<HTMLElement | null> = [
     h('header', { class: 'page-header' }, h('h1', {}, t('optionsTitle'))),
+    settings.clientId ? null : transfer,
     googleCard(settings),
     await accountsCard(settings),
     prefsCard(settings),
     await instantPushCard(settings, render),
+    settings.clientId ? transfer : null,
     h('p', { class: 'help privacy' }, t('privacyNote')),
-  );
+  ];
+  app.replaceChildren(...sections.filter((s): s is HTMLElement => s !== null));
 }
+
+// Configuration reprise de la synchronisation pendant que la page est ouverte.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.importedFromSyncAt) void render();
+});
 
 void render();

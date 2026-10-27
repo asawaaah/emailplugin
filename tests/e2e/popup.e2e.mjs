@@ -4,7 +4,7 @@
 // actions rapides et les notifications.
 // Usage : npm run build && npm run test:e2e   (captures dans test-results/)
 import { chromium } from 'playwright-core';
-import { mkdtemp, mkdir } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -520,6 +520,89 @@ await worker.evaluate(() => {
 });
 await options.getByRole('button', { name: 'Activer les notifications instantanées' }).click();
 await options.waitForSelector('text=brave://settings/privacy › « Utiliser les services Google', { timeout: 10_000 });
+
+// 12. Autres appareils : export du fichier, import sur un appareil neuf, synchronisation
+await options.reload();
+await options.waitForSelector('#export-config');
+const downloadPromise = options.waitForEvent('download');
+await options.locator('#export-config').click();
+const download = await downloadPromise;
+assert.match(download.suggestedFilename(), /^apercu-gmail-config-\d{4}-\d{2}-\d{2}\.json$/);
+const exportPath = path.join(OUT, 'config-export.json');
+await download.saveAs(exportPath);
+const exported = JSON.parse(await readFile(exportPath, 'utf-8'));
+assert.equal(exported.format, 'apercu-gmail-config');
+assert.equal(exported.settings.clientId, 'test.apps.googleusercontent.com');
+assert.deepEqual(exported.accounts.map((a) => a.email), ['bob.travail@gmail.com', 'alice@gmail.com']);
+assert.equal(exported.accounts[1].color, '#d93025', 'couleur choisie exportée');
+assert.equal(exported.relayKeys.secret, secret, 'clés du relais exportées');
+assert.ok(!JSON.stringify(exported).includes('tok-'), 'aucun jeton d’accès dans le fichier');
+await options.waitForSelector('text=Fichier enregistré');
+await options.locator('#transfer-status').scrollIntoViewIfNeeded();
+await options.screenshot({ path: `${OUT}/11-autres-appareils${suffix}.png`, fullPage: true });
+// La même configuration est déposée dans l'espace synchronisé du navigateur.
+await waitFor(async () => (await worker.evaluate(async () => (await chrome.storage.sync.get('config')).config?.settings?.clientId)) === 'test.apps.googleusercontent.com', 'configuration synchronisée');
+await rm(exportPath);
+
+async function freshBrowser() {
+  const dir = await mkdtemp(path.join(tmpdir(), 'apercu-gmail-neuf-'));
+  const ctx = await chromium.launchPersistentContext(dir, {
+    executablePath,
+    headless: true,
+    args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`],
+    viewport: { width: 900, height: 1100 },
+    colorScheme: process.env.DARK ? 'dark' : 'light',
+    serviceWorkers: 'allow',
+  });
+  let sw = ctx.serviceWorkers()[0];
+  if (!sw) sw = await ctx.waitForEvent('serviceworker');
+  // Aucune requête ne sort vers Google ni vers le relais.
+  await ctx.route(/googleapis\.com|accounts\.google\.com|workers\.dev/, (route) => route.fulfill({ status: 401, body: '{}' }));
+  // À l'installation, l'extension ouvre elle-même ses réglages dans le premier onglet.
+  const fresh = ctx.pages()[0] ?? await ctx.waitForEvent('page');
+  await fresh.waitForURL(/\/options\.html$/, { timeout: 10_000 });
+  await fresh.waitForLoadState();
+  fresh.on('pageerror', (e) => errors.push(e.message));
+  return { ctx, sw, fresh };
+}
+
+// Appareil neuf : la carte d'import est proposée en premier, sans confirmation.
+{
+  const { ctx, sw, fresh } = await freshBrowser();
+  const dialogs = [];
+  fresh.on('dialog', (d) => { dialogs.push(d.message()); void d.dismiss(); });
+  await fresh.waitForSelector('h2');
+  assert.equal(await fresh.locator('.card h2').first().textContent(), 'Déjà configuré sur un autre appareil ?');
+  await fresh.setInputFiles('#import-file', { name: 'faux.json', mimeType: 'application/json', buffer: Buffer.from('{"format":"autre"}') });
+  await fresh.waitForSelector('text=Ce fichier n’est pas une configuration');
+  await fresh.setInputFiles('#import-file', { name: 'config.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(exported)) });
+  await fresh.waitForSelector('text=Configuration importée (2 compte(s))');
+  assert.deepEqual(dialogs, [], 'pas de confirmation sur un appareil neuf');
+  const stored = await sw.evaluate(() => chrome.storage.local.get(['settings', 'accounts', 'relayKeys']));
+  assert.equal(stored.settings.clientId, 'test.apps.googleusercontent.com');
+  assert.deepEqual(stored.accounts.map((a) => [a.email, a.color]), [['bob.travail@gmail.com', undefined], ['alice@gmail.com', '#d93025']]);
+  assert.equal(stored.relayKeys.secret, secret);
+  assert.equal(await fresh.locator('#client-id').inputValue(), 'test.apps.googleusercontent.com');
+  await fresh.waitForSelector('.account-list li >> text=alice@gmail.com');
+  assert.equal(await fresh.locator('.card h2').first().textContent(), 'Connexion Google', 'carte d’import déplacée en bas');
+  assert.ok(await fresh.locator('.card h2', { hasText: 'Autres appareils' }).isVisible());
+  // Réimport sur un appareil configuré : confirmation demandée (refusée ici).
+  await fresh.setInputFiles('#import-file', { name: 'config.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(exported)) });
+  await waitFor(() => dialogs.length === 1, 'confirmation avant de remplacer');
+  await ctx.close();
+}
+
+// Synchronisation : un appareil neuf reprend tout seul la configuration déposée par un autre.
+{
+  const { ctx, sw, fresh } = await freshBrowser();
+  await fresh.waitForSelector('text=Déjà configuré sur un autre appareil ?');
+  await sw.evaluate((config) => chrome.storage.sync.set({ config }), exported);
+  await fresh.waitForSelector('text=Configuration reprise de la synchronisation', { timeout: 10_000 });
+  const stored = await sw.evaluate(() => chrome.storage.local.get(['settings', 'accounts']));
+  assert.equal(stored.settings.clientId, 'test.apps.googleusercontent.com');
+  assert.equal(stored.accounts.length, 2);
+  await ctx.close();
+}
 
 // 10. Anglais
 await options.selectOption('#language', 'en');

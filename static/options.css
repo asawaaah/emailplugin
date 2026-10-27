@@ -77,3 +77,6 @@ input[readonly] { background: var(--surface); }
 @media (prefers-color-scheme: dark) {
   .push-state.active { background: #0f3d22; color: #a8dab5; }
 }
+
+/* Autres appareils */
+.transfer-warning { padding: 8px 12px; border-radius: 8px; background: var(--warning-bg); color: var(--warning-text); }

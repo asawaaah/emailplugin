@@ -18,6 +18,7 @@ import {
   saveSeen,
   saveToasts,
 } from './lib/storage';
+import { applyConfig, configFingerprint, currentConfig, parseConfig } from './lib/config-transfer';
 import { disableInstantPush, enableInstantPush, notePushReceived, renewInstantPush, stopWatching, testInstantPush } from './lib/push';
 import { cornerBounds, workArea } from './lib/toast-window';
 import type { ToastTabMessage } from './content/toast';
@@ -384,6 +385,12 @@ async function handle(request: Request): Promise<unknown> {
       return disableInstantPush();
     case 'testPush':
       return testInstantPush();
+    case 'configImported':
+      // Configuration importée depuis la page Réglages : connexion des comptes et relais.
+      await scheduleAlarm();
+      await pollAll();
+      void renewInstantPush();
+      return null;
     case 'refresh':
       await pollAll();
       return null;
@@ -486,13 +493,71 @@ async function migrate(): Promise<void> {
   await chrome.storage.local.set({ migrations: [...done] });
 }
 
+// ---------- Configuration partagée entre appareils (espace synchronisé) ----------
+
+const SYNC_KEY = 'config';
+let syncTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Copie la configuration de cet appareil dans l'espace synchronisé (ou l'en retire). */
+async function writeSyncedConfig(): Promise<void> {
+  const config = await currentConfig();
+  if (!config.settings.syncConfig) {
+    await chrome.storage.sync.remove(SYNC_KEY).catch(() => undefined);
+    return;
+  }
+  // Un appareil pas encore configuré n'écrase jamais la configuration des autres.
+  if (!config.settings.clientId) return;
+  const { [SYNC_KEY]: stored } = await chrome.storage.sync.get(SYNC_KEY).catch(() => ({ [SYNC_KEY]: undefined }));
+  let same = false;
+  try {
+    same = stored !== undefined && configFingerprint(parseConfig(stored)) === configFingerprint(config);
+  } catch {
+    same = false;
+  }
+  if (!same) await chrome.storage.sync.set({ [SYNC_KEY]: config }).catch((error: unknown) => {
+    console.warn('Synchronisation de la configuration impossible', error instanceof Error ? error.message : error);
+  });
+}
+
+function scheduleSyncWrite(): void {
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => void writeSyncedConfig(), 3000);
+}
+
+/**
+ * Appareil neuf (aucun identifiant client) : reprend la configuration de
+ * l'espace synchronisé si un autre appareil l'y a déposée.
+ */
+async function importSyncedConfigIfFresh(): Promise<void> {
+  if ((await getSettings()).clientId) return;
+  const { [SYNC_KEY]: stored } = await chrome.storage.sync.get(SYNC_KEY).catch(() => ({ [SYNC_KEY]: undefined }));
+  if (stored === undefined) return;
+  let config;
+  try {
+    config = parseConfig(stored);
+  } catch {
+    return;
+  }
+  if (!config.settings.syncConfig) return;
+  await applyConfig(config);
+  await chrome.storage.local.set({ importedFromSyncAt: Date.now() });
+  await scheduleAlarm();
+  await pollAll();
+  void renewInstantPush();
+}
+
 chrome.runtime.onInstalled.addListener((details) => {
-  void migrate().then(scheduleAlarm).then(pollAll);
+  void migrate().then(scheduleAlarm).then(importSyncedConfigIfFresh).then(pollAll).then(scheduleSyncWrite);
   if (details.reason === 'install') void chrome.runtime.openOptionsPage();
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  void scheduleAlarm().then(pollAll).then(renewInstantPush);
+  void scheduleAlarm().then(importSyncedConfigIfFresh).then(pollAll).then(renewInstantPush).then(scheduleSyncWrite);
+});
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'sync' && changes[SYNC_KEY]) void importSyncedConfigIfFresh();
+  if (area === 'local' && (changes.settings || changes.accounts || changes.relayKeys)) scheduleSyncWrite();
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {

@@ -29,6 +29,8 @@ export interface Settings {
   relayUrl: string;
   /** Sujet Pub/Sub : projects/<projet>/topics/<sujet>. */
   pubsubTopic: string;
+  /** Copier la configuration dans l'espace synchronisé du navigateur (autres appareils). */
+  syncConfig: boolean;
 }
 
 /** Clés du relais, générées par la page Réglages. */

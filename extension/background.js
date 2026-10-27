@@ -238,8 +238,12 @@ var DEFAULT_SETTINGS = {
   notificationPosition: "top-right",
   instantPush: false,
   relayUrl: "",
-  pubsubTopic: ""
+  pubsubTopic: "",
+  syncConfig: true
 };
+var NOTIFICATION_SECONDS_CHOICES = [5, 8, 15, 30, 0];
+var POLL_CHOICES = [1, 2, 5, 10, 15];
+var MAX_THREADS_CHOICES = [10, 20, 30, 50];
 async function getSettings() {
   const { settings } = await chrome.storage.local.get("settings");
   return { ...DEFAULT_SETTINGS, ...settings };
@@ -294,6 +298,9 @@ function mergeToasts(queue, incoming) {
 async function getRelayKeys() {
   const { relayKeys } = await chrome.storage.local.get("relayKeys");
   return relayKeys ?? null;
+}
+async function saveRelayKeys(keys) {
+  await chrome.storage.local.set({ relayKeys: keys });
 }
 async function getPushStatus() {
   const { pushStatus } = await chrome.storage.local.get("pushStatus");
@@ -573,6 +580,23 @@ var fr = {
   pushErrWatchFailed: "Gmail refuse de pr\xE9venir le sujet Pub/Sub : v\xE9rifiez le nom du sujet et que gmail-api-push@system.gserviceaccount.com a le r\xF4le \xAB Diffuseur Pub/Sub \xBB (Pub/Sub Publisher) sur ce sujet.",
   pushErrNoAccounts: "Ajoutez d\u2019abord un compte Gmail.",
   pushBraveHint: "Brave : activez \xAB Utiliser les services Google pour la messagerie push \xBB dans brave://settings/privacy.",
+  transferSectionFresh: "D\xE9j\xE0 configur\xE9 sur un autre appareil ?",
+  transferSection: "Autres appareils",
+  transferHelpFresh: "Importez le fichier de configuration export\xE9 depuis votre autre appareil : identifiant Google, comptes, couleurs, r\xE9glages et notifications instantan\xE9es sont repris d\u2019un coup. Sinon, suivez les \xE9tapes ci-dessous.",
+  transferHelp: "Pour installer l\u2019extension ailleurs sans tout refaire : exportez la configuration, puis importez le fichier sur l\u2019autre appareil.",
+  exportConfig: "Exporter la configuration",
+  importConfig: "Importer une configuration",
+  exportDone: "Fichier enregistr\xE9 dans vos t\xE9l\xE9chargements.",
+  exportWarning: "Ce fichier contient les cl\xE9s de votre relais : gardez-le pour vous (jamais sur GitHub ni dans un courriel public) et supprimez-le apr\xE8s l\u2019import. Il ne contient ni mot de passe ni courriel.",
+  importConfirm: "Remplacer les r\xE9glages de cet appareil par ceux du fichier ({0} compte(s)) ?",
+  importDone: "Configuration import\xE9e ({0} compte(s)). Si un compte demande une reconnexion, cliquez sur \xAB Se reconnecter \xBB dans l\u2019extension.",
+  importErrInvalid: "Ce fichier n\u2019est pas une configuration Aper\xE7u Gmail.",
+  importErrTooLarge: "Fichier trop volumineux pour \xEAtre une configuration.",
+  importErrVersion: "Configuration cr\xE9\xE9e par une version plus r\xE9cente : mettez d\u2019abord l\u2019extension \xE0 jour.",
+  importErrNoClientId: "La configuration ne contient pas d\u2019identifiant client Google valide.",
+  syncLabel: "Partager la configuration avec mes autres navigateurs synchronis\xE9s",
+  syncHelp: "Si la synchronisation du navigateur inclut les extensions, un nouvel appareil reprend la configuration tout seul. Sinon, utilisez le fichier.",
+  syncedFrom: "Configuration reprise de la synchronisation le {0}.",
   privacyNote: "Vos courriels ne quittent jamais votre navigateur : l\u2019extension parle directement \xE0 Google. Le relais facultatif des notifications instantan\xE9es ne re\xE7oit qu\u2019un signal, jamais vos courriels."
 };
 var en = {
@@ -722,6 +746,23 @@ var en = {
   pushErrWatchFailed: "Gmail refuses to alert the Pub/Sub topic: check the topic name and that gmail-api-push@system.gserviceaccount.com has the \u201CPub/Sub Publisher\u201D role on it.",
   pushErrNoAccounts: "Add a Gmail account first.",
   pushBraveHint: "Brave: turn on \u201CUse Google services for push messaging\u201D in brave://settings/privacy.",
+  transferSectionFresh: "Already set up on another device?",
+  transferSection: "Other devices",
+  transferHelpFresh: "Import the configuration file exported from your other device: Google client ID, accounts, colors, settings and instant notifications are restored at once. Otherwise, follow the steps below.",
+  transferHelp: "To install the extension elsewhere without redoing everything: export the configuration, then import the file on the other device.",
+  exportConfig: "Export configuration",
+  importConfig: "Import a configuration",
+  exportDone: "File saved to your downloads.",
+  exportWarning: "This file contains your relay keys: keep it to yourself (never on GitHub or in a public email) and delete it after importing. It contains no password and no email.",
+  importConfirm: "Replace this device\u2019s settings with those from the file ({0} account(s))?",
+  importDone: "Configuration imported ({0} account(s)). If an account asks to sign in again, click \u201CSign in again\u201D in the extension.",
+  importErrInvalid: "This file is not a Gmail Preview configuration.",
+  importErrTooLarge: "File too large to be a configuration.",
+  importErrVersion: "Configuration created by a newer version: update the extension first.",
+  importErrNoClientId: "The configuration has no valid Google client ID.",
+  syncLabel: "Share the configuration with my other synced browsers",
+  syncHelp: "If browser sync includes extensions, a new device picks up the configuration by itself. Otherwise, use the file.",
+  syncedFrom: "Configuration restored from sync on {0}.",
   privacyNote: "Your messages never leave your browser: the extension talks directly to Google. The optional instant-notification relay only receives a signal, never your messages."
 };
 var dictionaries = { fr, en };
@@ -760,6 +801,12 @@ function parseNotificationId(id) {
   return { email, threadId: kind === "msg" ? rest ?? null : null };
 }
 
+// src/lib/colors.ts
+var HEX = /^#[0-9a-f]{6}$/i;
+function isHexColor(value) {
+  return typeof value === "string" && HEX.test(value);
+}
+
 // src/lib/relay-keys.ts
 function fromBase64url(value) {
   const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
@@ -779,6 +826,136 @@ function normalizeRelayUrl(value) {
 }
 function isPubsubTopic(value) {
   return /^projects\/[a-z][a-z0-9-]{4,28}[a-z0-9]\/topics\/[A-Za-z][\w.~+%-]{2,254}$/.test(value.trim());
+}
+
+// src/lib/config-transfer.ts
+var CONFIG_FORMAT = "apercu-gmail-config";
+var CONFIG_VERSION = 1;
+var ConfigError = class extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "ConfigError";
+  }
+};
+function buildConfig(settings, accounts, relayKeys, now = Date.now()) {
+  return {
+    format: CONFIG_FORMAT,
+    version: CONFIG_VERSION,
+    exportedAt: now,
+    settings: { ...settings },
+    accounts: accounts.map(({ email, color }) => color ? { email, color } : { email }),
+    relayKeys
+  };
+}
+function configFingerprint(config2) {
+  return JSON.stringify({ ...config2, exportedAt: 0 });
+}
+var EMAIL = /^[^\s@]{1,64}@[^\s@]{1,255}$/;
+var CLIENT_ID = /^[\w.-]{1,200}\.apps\.googleusercontent\.com$/;
+var B64URL = /^[A-Za-z0-9_-]+$/;
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function oneOf(value, allowed, fallback) {
+  return allowed.includes(value) ? value : fallback;
+}
+function bool(value, fallback) {
+  return typeof value === "boolean" ? value : fallback;
+}
+function parseSettings(raw) {
+  const s = isRecord(raw) ? raw : {};
+  const d = DEFAULT_SETTINGS;
+  const clientId = typeof s.clientId === "string" && CLIENT_ID.test(s.clientId.trim()) ? s.clientId.trim() : "";
+  const relayUrl = typeof s.relayUrl === "string" ? normalizeRelayUrl(s.relayUrl) ?? "" : "";
+  const pubsubTopic = typeof s.pubsubTopic === "string" && isPubsubTopic(s.pubsubTopic) ? s.pubsubTopic.trim() : "";
+  return {
+    clientId,
+    language: oneOf(s.language, ["fr", "en"], d.language),
+    pollMinutes: oneOf(s.pollMinutes, POLL_CHOICES, d.pollMinutes),
+    maxThreads: oneOf(s.maxThreads, MAX_THREADS_CHOICES, d.maxThreads),
+    markReadOnOpen: bool(s.markReadOnOpen, d.markReadOnOpen),
+    alwaysShowImages: bool(s.alwaysShowImages, d.alwaysShowImages),
+    unreadOnly: bool(s.unreadOnly, d.unreadOnly),
+    notifications: bool(s.notifications, d.notifications),
+    notificationStyle: oneOf(s.notificationStyle, ["tab", "window", "system", "both"], d.notificationStyle),
+    notificationSeconds: oneOf(s.notificationSeconds, NOTIFICATION_SECONDS_CHOICES, d.notificationSeconds),
+    notificationPosition: oneOf(s.notificationPosition, ["top-right", "bottom-right"], d.notificationPosition),
+    // L'instantané ne s'active que si sa configuration est complète.
+    instantPush: bool(s.instantPush, false) && Boolean(relayUrl && pubsubTopic),
+    relayUrl,
+    pubsubTopic,
+    syncConfig: bool(s.syncConfig, d.syncConfig)
+  };
+}
+function parseAccounts(raw) {
+  if (!Array.isArray(raw)) return [];
+  const seen = /* @__PURE__ */ new Set();
+  const accounts = [];
+  for (const item of raw.slice(0, 20)) {
+    if (!isRecord(item) || typeof item.email !== "string") continue;
+    const email = item.email.trim().toLowerCase();
+    if (!EMAIL.test(email) || seen.has(email)) continue;
+    seen.add(email);
+    accounts.push(isHexColor(item.color) ? { email, color: item.color.toLowerCase() } : { email });
+  }
+  return accounts;
+}
+function parseRelayKeys(raw) {
+  if (!isRecord(raw)) return null;
+  const { secret, vapidPublicKey, vapidPrivateJwk } = raw;
+  if (typeof secret !== "string" || secret.length < 32 || secret.length > 128 || !B64URL.test(secret)) return null;
+  if (typeof vapidPublicKey !== "string" || vapidPublicKey.length !== 87 || !B64URL.test(vapidPublicKey)) return null;
+  if (typeof vapidPrivateJwk !== "string" || vapidPrivateJwk.length > 1e3) return null;
+  try {
+    const jwk = JSON.parse(vapidPrivateJwk);
+    const fields = ["d", "x", "y"].every((k) => typeof jwk[k] === "string" && B64URL.test(jwk[k]));
+    if (jwk.kty !== "EC" || jwk.crv !== "P-256" || !fields) return null;
+    return { secret, vapidPublicKey, vapidPrivateJwk: JSON.stringify({ kty: "EC", crv: "P-256", d: jwk.d, x: jwk.x, y: jwk.y }) };
+  } catch {
+    return null;
+  }
+}
+function parseConfig(input) {
+  let raw = input;
+  if (typeof input === "string") {
+    if (input.length > 5e4) throw new ConfigError("too_large");
+    try {
+      raw = JSON.parse(input);
+    } catch {
+      throw new ConfigError("not_json");
+    }
+  }
+  if (!isRecord(raw) || raw.format !== CONFIG_FORMAT) throw new ConfigError("not_a_config");
+  if (raw.version !== CONFIG_VERSION) throw new ConfigError("unsupported_version");
+  const settings = parseSettings(raw.settings);
+  if (!settings.clientId) throw new ConfigError("no_client_id");
+  return {
+    format: CONFIG_FORMAT,
+    version: CONFIG_VERSION,
+    exportedAt: typeof raw.exportedAt === "number" ? raw.exportedAt : 0,
+    settings,
+    accounts: parseAccounts(raw.accounts),
+    relayKeys: parseRelayKeys(raw.relayKeys)
+  };
+}
+function mergeAccounts(current2, imported, now = Date.now()) {
+  const byEmail = new Map(current2.map((a) => [a.email, a]));
+  const merged = imported.map(({ email, color }) => {
+    const existing = byEmail.get(email);
+    const base = { email, addedAt: existing?.addedAt ?? now };
+    return color ? { ...base, color } : base;
+  });
+  const importedEmails = new Set(imported.map((a) => a.email));
+  for (const account of current2) if (!importedEmails.has(account.email)) merged.push(account);
+  return merged;
+}
+async function currentConfig() {
+  return buildConfig(await getSettings(), await getAccounts(), await getRelayKeys());
+}
+async function applyConfig(config2) {
+  await chrome.storage.local.set({ settings: config2.settings });
+  await saveAccounts(mergeAccounts(await getAccounts(), config2.accounts));
+  if (config2.relayKeys) await saveRelayKeys(config2.relayKeys);
 }
 
 // src/lib/push.ts
@@ -1234,6 +1411,11 @@ async function handle(request) {
       return disableInstantPush();
     case "testPush":
       return testInstantPush();
+    case "configImported":
+      await scheduleAlarm();
+      await pollAll();
+      void renewInstantPush();
+      return null;
     case "refresh":
       await pollAll();
       return null;
@@ -1317,12 +1499,57 @@ async function migrate() {
   }
   await chrome.storage.local.set({ migrations: [...done] });
 }
+var SYNC_KEY = "config";
+var syncTimer;
+async function writeSyncedConfig() {
+  const config2 = await currentConfig();
+  if (!config2.settings.syncConfig) {
+    await chrome.storage.sync.remove(SYNC_KEY).catch(() => void 0);
+    return;
+  }
+  if (!config2.settings.clientId) return;
+  const { [SYNC_KEY]: stored } = await chrome.storage.sync.get(SYNC_KEY).catch(() => ({ [SYNC_KEY]: void 0 }));
+  let same = false;
+  try {
+    same = stored !== void 0 && configFingerprint(parseConfig(stored)) === configFingerprint(config2);
+  } catch {
+    same = false;
+  }
+  if (!same) await chrome.storage.sync.set({ [SYNC_KEY]: config2 }).catch((error) => {
+    console.warn("Synchronisation de la configuration impossible", error instanceof Error ? error.message : error);
+  });
+}
+function scheduleSyncWrite() {
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => void writeSyncedConfig(), 3e3);
+}
+async function importSyncedConfigIfFresh() {
+  if ((await getSettings()).clientId) return;
+  const { [SYNC_KEY]: stored } = await chrome.storage.sync.get(SYNC_KEY).catch(() => ({ [SYNC_KEY]: void 0 }));
+  if (stored === void 0) return;
+  let config2;
+  try {
+    config2 = parseConfig(stored);
+  } catch {
+    return;
+  }
+  if (!config2.settings.syncConfig) return;
+  await applyConfig(config2);
+  await chrome.storage.local.set({ importedFromSyncAt: Date.now() });
+  await scheduleAlarm();
+  await pollAll();
+  void renewInstantPush();
+}
 chrome.runtime.onInstalled.addListener((details) => {
-  void migrate().then(scheduleAlarm).then(pollAll);
+  void migrate().then(scheduleAlarm).then(importSyncedConfigIfFresh).then(pollAll).then(scheduleSyncWrite);
   if (details.reason === "install") void chrome.runtime.openOptionsPage();
 });
 chrome.runtime.onStartup.addListener(() => {
-  void scheduleAlarm().then(pollAll).then(renewInstantPush);
+  void scheduleAlarm().then(importSyncedConfigIfFresh).then(pollAll).then(renewInstantPush).then(scheduleSyncWrite);
+});
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "sync" && changes[SYNC_KEY]) void importSyncedConfigIfFresh();
+  if (area === "local" && (changes.settings || changes.accounts || changes.relayKeys)) scheduleSyncWrite();
 });
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local" || !changes.settings) return;

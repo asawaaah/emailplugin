@@ -15,7 +15,11 @@ Extension Chrome pour voir et trier ses courriels Gmail d'un clic, à la manièr
 - Aucun serveur : l'extension parle directement à l'API Gmail de Google. Vos courriels ne passent par aucun autre service.
 - **Notifications instantanées** en option, avec un petit relais gratuit sur Cloudflare (voir plus bas) ; sinon, vérification chaque minute.
 
+- **Autres appareils** en deux minutes : exporter la configuration dans un fichier, l'importer ailleurs (voir « Installer sur un autre appareil »).
+
 ## Installation (une seule fois, environ 15 minutes)
+
+Déjà installée sur un autre appareil ? Passez directement à **Installer sur un autre appareil**, plus bas.
 
 ### 1. Google Cloud : obtenir l'« ID client »
 
@@ -126,6 +130,28 @@ Garder le dossier décompressé au même endroit : Chrome charge l'extension dep
   - Sur les pages internes du navigateur (nouvel onglet, `brave://…`, réglages, boutique d'extensions), aucune extension ne peut dessiner : la notification du système prend le relais.
   - Si le navigateur n'est pas au premier plan, la bulle attend votre retour avant de lancer son compte à rebours. Pour être alerté pendant que vous êtes dans une autre application, choisir « Bulle + notification du système ».
 - **Retirer un compte** depuis les Réglages révoque aussi l'accès chez Google.
+
+## Installer sur un autre appareil (2 minutes)
+
+Google Cloud, Cloudflare et Pub/Sub ne se configurent **qu'une fois** : un autre ordinateur ou navigateur réutilise tout.
+
+**Sur l'appareil déjà configuré**
+
+1. Réglages, carte **Autres appareils**, bouton **Exporter la configuration**. Un fichier `apercu-gmail-config-AAAA-MM-JJ.json` arrive dans vos téléchargements.
+2. Le transférer sur l'autre appareil (clé USB, AirDrop, votre propre Google Drive…).
+
+**Sur le nouvel appareil**
+
+1. Charger l'extension comme à l'étape 2 de l'installation (dossier `extension`).
+2. La page Réglages s'ouvre : carte **Déjà configuré sur un autre appareil ?**, bouton **Importer une configuration**, choisir le fichier.
+3. C'est terminé : identifiant Google, comptes, couleurs, préférences et notifications instantanées sont repris. Si un compte affiche **Se reconnecter**, un clic suffit (le navigateur doit être connecté à ce compte Google).
+4. Supprimer le fichier.
+
+Bon à savoir :
+
+- Le fichier contient les **clés du relais** (pas vos mots de passe ni vos courriels). Le garder pour vous : jamais sur GitHub, ni dans un courriel partagé.
+- **Synchronisation automatique** : si la case « Partager la configuration avec mes autres navigateurs synchronisés » est cochée et que la synchronisation du navigateur inclut les extensions, un nouvel appareil connecté au même profil reprend la configuration tout seul, sans fichier. Brave ne synchronise pas toujours les données des extensions : le fichier reste la méthode sûre.
+- Le relais accepte jusqu'à 5 navigateurs par adresse Gmail pour les notifications instantanées.
 
 ## Notifications instantanées (facultatif)
 

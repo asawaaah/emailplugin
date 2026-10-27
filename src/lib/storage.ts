@@ -20,6 +20,7 @@ export const DEFAULT_SETTINGS: Settings = {
   instantPush: false,
   relayUrl: '',
   pubsubTopic: '',
+  syncConfig: true,
 };
 
 export const NOTIFICATION_SECONDS_CHOICES = [5, 8, 15, 30, 0] as const;

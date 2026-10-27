@@ -240,6 +240,23 @@ var fr = {
   pushErrWatchFailed: "Gmail refuse de pr\xE9venir le sujet Pub/Sub : v\xE9rifiez le nom du sujet et que gmail-api-push@system.gserviceaccount.com a le r\xF4le \xAB Diffuseur Pub/Sub \xBB (Pub/Sub Publisher) sur ce sujet.",
   pushErrNoAccounts: "Ajoutez d\u2019abord un compte Gmail.",
   pushBraveHint: "Brave : activez \xAB Utiliser les services Google pour la messagerie push \xBB dans brave://settings/privacy.",
+  transferSectionFresh: "D\xE9j\xE0 configur\xE9 sur un autre appareil ?",
+  transferSection: "Autres appareils",
+  transferHelpFresh: "Importez le fichier de configuration export\xE9 depuis votre autre appareil : identifiant Google, comptes, couleurs, r\xE9glages et notifications instantan\xE9es sont repris d\u2019un coup. Sinon, suivez les \xE9tapes ci-dessous.",
+  transferHelp: "Pour installer l\u2019extension ailleurs sans tout refaire : exportez la configuration, puis importez le fichier sur l\u2019autre appareil.",
+  exportConfig: "Exporter la configuration",
+  importConfig: "Importer une configuration",
+  exportDone: "Fichier enregistr\xE9 dans vos t\xE9l\xE9chargements.",
+  exportWarning: "Ce fichier contient les cl\xE9s de votre relais : gardez-le pour vous (jamais sur GitHub ni dans un courriel public) et supprimez-le apr\xE8s l\u2019import. Il ne contient ni mot de passe ni courriel.",
+  importConfirm: "Remplacer les r\xE9glages de cet appareil par ceux du fichier ({0} compte(s)) ?",
+  importDone: "Configuration import\xE9e ({0} compte(s)). Si un compte demande une reconnexion, cliquez sur \xAB Se reconnecter \xBB dans l\u2019extension.",
+  importErrInvalid: "Ce fichier n\u2019est pas une configuration Aper\xE7u Gmail.",
+  importErrTooLarge: "Fichier trop volumineux pour \xEAtre une configuration.",
+  importErrVersion: "Configuration cr\xE9\xE9e par une version plus r\xE9cente : mettez d\u2019abord l\u2019extension \xE0 jour.",
+  importErrNoClientId: "La configuration ne contient pas d\u2019identifiant client Google valide.",
+  syncLabel: "Partager la configuration avec mes autres navigateurs synchronis\xE9s",
+  syncHelp: "Si la synchronisation du navigateur inclut les extensions, un nouvel appareil reprend la configuration tout seul. Sinon, utilisez le fichier.",
+  syncedFrom: "Configuration reprise de la synchronisation le {0}.",
   privacyNote: "Vos courriels ne quittent jamais votre navigateur : l\u2019extension parle directement \xE0 Google. Le relais facultatif des notifications instantan\xE9es ne re\xE7oit qu\u2019un signal, jamais vos courriels."
 };
 var en = {
@@ -389,6 +406,23 @@ var en = {
   pushErrWatchFailed: "Gmail refuses to alert the Pub/Sub topic: check the topic name and that gmail-api-push@system.gserviceaccount.com has the \u201CPub/Sub Publisher\u201D role on it.",
   pushErrNoAccounts: "Add a Gmail account first.",
   pushBraveHint: "Brave: turn on \u201CUse Google services for push messaging\u201D in brave://settings/privacy.",
+  transferSectionFresh: "Already set up on another device?",
+  transferSection: "Other devices",
+  transferHelpFresh: "Import the configuration file exported from your other device: Google client ID, accounts, colors, settings and instant notifications are restored at once. Otherwise, follow the steps below.",
+  transferHelp: "To install the extension elsewhere without redoing everything: export the configuration, then import the file on the other device.",
+  exportConfig: "Export configuration",
+  importConfig: "Import a configuration",
+  exportDone: "File saved to your downloads.",
+  exportWarning: "This file contains your relay keys: keep it to yourself (never on GitHub or in a public email) and delete it after importing. It contains no password and no email.",
+  importConfirm: "Replace this device\u2019s settings with those from the file ({0} account(s))?",
+  importDone: "Configuration imported ({0} account(s)). If an account asks to sign in again, click \u201CSign in again\u201D in the extension.",
+  importErrInvalid: "This file is not a Gmail Preview configuration.",
+  importErrTooLarge: "File too large to be a configuration.",
+  importErrVersion: "Configuration created by a newer version: update the extension first.",
+  importErrNoClientId: "The configuration has no valid Google client ID.",
+  syncLabel: "Share the configuration with my other synced browsers",
+  syncHelp: "If browser sync includes extensions, a new device picks up the configuration by itself. Otherwise, use the file.",
+  syncedFrom: "Configuration restored from sync on {0}.",
   privacyNote: "Your messages never leave your browser: the extension talks directly to Google. The optional instant-notification relay only receives a signal, never your messages."
 };
 var dictionaries = { fr, en };
@@ -446,7 +480,8 @@ var DEFAULT_SETTINGS = {
   notificationPosition: "top-right",
   instantPush: false,
   relayUrl: "",
-  pubsubTopic: ""
+  pubsubTopic: "",
+  syncConfig: true
 };
 async function getSettings() {
   const { settings } = await chrome.storage.local.get("settings");

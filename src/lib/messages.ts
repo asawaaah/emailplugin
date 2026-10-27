@@ -14,7 +14,8 @@ export type Request =
   | { type: 'placeToastWindow'; windowId: number; height: number }
   | { type: 'enablePush' }
   | { type: 'disablePush' }
-  | { type: 'testPush' };
+  | { type: 'testPush' }
+  | { type: 'configImported' };
 
 export type ErrorCode = 'auth_required' | 'no_client_id' | 'canceled' | 'mismatch' | 'failed';
 
